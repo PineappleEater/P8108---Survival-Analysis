@@ -1,0 +1,1878 @@
+---
+title: "Survival Analysis 期中考试复习"
+author: "P8108 Midterm Review"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: show
+    theme: cosmo
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 8, fig.height = 6)
+library(survival)
+library(survminer)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(gridExtra)
+```
+
+# Chapter 1: Basic Concepts
+
+## 1.1 基本定义与记号
+
+**符号说明**：在本复习资料中，我们使用 $h(t)$ 表示风险函数(hazard function)，$H(t)$ 表示累积风险函数(cumulative hazard function)。课件/教材中可能也会使用 $\lambda(t) = h(t)$ 和 $\Lambda(t) = H(t)$ 来表示相同的概念。
+
+### 生存时间和基本函数
+
+```{r basic_functions}
+# 示例：生成模拟数据展示基本函数关系
+t <- seq(0, 10, 0.1)
+lambda <- 0.5  # 指数分布参数
+
+# 四个基本函数
+h_t <- lambda  # 恒定hazard
+H_t <- lambda * t  # 累积hazard
+S_t <- exp(-lambda * t)  # 生存函数
+f_t <- lambda * exp(-lambda * t)  # 密度函数
+F_t <- 1 - S_t  # 累积分布函数
+
+# 可视化
+par(mfrow = c(2, 2))
+plot(t, S_t, type = "l", lwd = 2, col = "blue",
+     main = "生存函数 S(t)", ylab = "S(t)", xlab = "Time")
+plot(t, h_t * rep(1, length(t)), type = "l", lwd = 2, col = "red",
+     main = "风险函数 h(t) - 恒定", ylab = "h(t)", xlab = "Time")
+plot(t, H_t, type = "l", lwd = 2, col = "green",
+     main = "累积风险 H(t)", ylab = "H(t)", xlab = "Time")
+plot(t, f_t, type = "l", lwd = 2, col = "purple",
+     main = "密度函数 f(t)", ylab = "f(t)", xlab = "Time")
+par(mfrow = c(1, 1))
+```
+
+**关键关系式：**
+
+**基本定义：**
+
+- $S(t) = P(T > t) = 1 - F(t)$ (生存函数与CDF的关系)
+- $F(t) = P(T \le t) = \int_0^t f(u)du$ (累积分布函数)
+- $f(t) = \frac{dF(t)}{dt} = -\frac{dS(t)}{dt} = -S'(t)$ (密度函数是生存函数的负导数)
+
+**风险函数关系：**
+
+- $h(t) = \frac{f(t)}{S(t)} = -\frac{d\log S(t)}{dt} = -\frac{S'(t)}{S(t)}$ (风险函数定义)
+- $H(t) = \int_0^t h(u)du = -\log S(t)$ (累积风险函数)
+- $S(t) = \exp(-H(t)) = \exp\left(-\int_0^t h(u)du\right)$ (生存函数通过累积风险表示)
+- $f(t) = h(t)S(t)$ (密度、风险、生存的关系)
+
+**完整关系链：**
+
+从任一函数可推导其他所有函数：
+$$f(t) \xleftrightarrow[\div S(t)]{} h(t) \xleftrightarrow[\text{积分}]{} H(t) \xleftrightarrow[\exp(-\cdot)]{} S(t) \xleftrightarrow[1-\cdot]{} F(t)$$
+
+### 条件概率计算
+
+**核心公式**：$$P(T > s+t \mid T > s) = \frac{S(s+t)}{S(s)}$$
+
+**指数分布的无记忆性**：对于指数分布，$P(T > s+t \mid T > s) = P(T > t) = e^{-\lambda t}$
+
+```{r conditional_prob}
+# 验证指数分布的条件概率和无记忆性
+lambda <- 0.3
+s <- 2
+t <- 3
+
+# P(T > s+t | T > s) = S(s+t) / S(s)
+S_s <- exp(-lambda * s)
+S_st <- exp(-lambda * (s + t))
+cond_prob <- S_st / S_s
+
+# 结果展示
+result_df <- data.frame(
+  Method = c("条件概率 P(T>5|T>2)", "直接计算 P(T>3)", "差异"),
+  Value = c(cond_prob, exp(-lambda * t), abs(cond_prob - exp(-lambda * t)))
+)
+kable(result_df, digits = 6, caption = "指数分布无记忆性验证")
+```
+
+**考试要点**：指数分布是唯一具有无记忆性的连续分布
+
+## 1.2 删失类型
+
+### 右删失示例
+
+```{r censoring_types}
+# 模拟右删失数据
+set.seed(123)
+n <- 100
+
+# 真实事件时间（指数分布）
+true_time <- rexp(n, rate = 0.2)
+
+# 删失时间（均匀分布）
+censor_time <- runif(n, 0, 15)
+
+# 观测时间和删失指示
+obs_time <- pmin(true_time, censor_time)
+event <- as.numeric(true_time <= censor_time)
+
+# 创建生存对象
+surv_obj <- Surv(time = obs_time, event = event)
+
+# 汇总统计
+summary_df <- data.frame(
+  Item = c("样本量", "事件数", "删失数", "删失率"),
+  Value = c(n, sum(event), sum(1 - event),
+            paste0(round(mean(1 - event) * 100, 1), "%"))
+)
+kable(summary_df, col.names = c("项目", "值"), caption = "右删失数据汇总")
+
+head(data.frame(obs_time, event, surv_obj), 10)
+```
+
+### 左截断（延迟进入）示例
+
+```{r left_truncation}
+# 示例：研究从1990年开始，但只观察1985年后出生且存活到1990年的个体
+set.seed(456)
+n <- 50
+
+# 出生时间（1985-1990之间）
+birth_year <- runif(n, 1985, 1990)
+
+# 进入研究时间（1990年）
+entry_year <- 1990
+
+# 事件时间（从出生算起）
+event_year <- birth_year + rexp(n, rate = 0.1)
+
+# 删失时间（研究结束于2000年）
+censor_year <- 2000
+
+# 只观察存活到1990年的个体
+entry_time <- entry_year - birth_year  # 左截断时间
+obs_time <- pmin(event_year, censor_year) - birth_year
+event <- as.numeric(event_year < censor_year)
+
+# 左截断数据
+left_trunc_data <- data.frame(
+  entry = entry_time,
+  exit = obs_time,
+  event = event
+)
+
+kable(head(left_trunc_data), digits = 1,
+      caption = paste0("左截断数据示例（所有个体在时间 ", round(unique(entry_time), 1), " 进入研究）"))
+```
+
+# Chapter 2: Kaplan-Meier 估计
+
+## 2.1 KM估计量的计算
+
+### 手工计算示例
+
+```{r km_manual}
+# 示例数据：2, 3+, 5, 8, 8+  (+ 表示删失)
+time <- c(2, 3, 5, 8, 8)
+event <- c(1, 0, 1, 1, 0)
+
+# 创建KM表格
+km_table <- data.frame(
+  t = c(0, 2, 3, 5, 8),
+  n_risk = c(5, 5, 4, 3, 2),
+  n_event = c(0, 1, 0, 1, 1),
+  n_censor = c(0, 0, 1, 0, 1),
+  survival = c(1, 0.8, 0.8, 0.533, 0.267)
+)
+
+km_table$hazard <- km_table$n_event / km_table$n_risk
+km_table$se_component <- ifelse(km_table$n_event > 0,
+                                 km_table$n_event / (km_table$n_risk * (km_table$n_risk - km_table$n_event)),
+                                 0)
+
+print(km_table)
+
+# 计算Greenwood标准误（在t=8时）
+greenwood_sum <- sum(km_table$se_component[km_table$t <= 8 & km_table$n_event > 0])
+se_s8 <- km_table$survival[km_table$t == 8] * sqrt(greenwood_sum)
+
+cat("\nGreenwood方差成分之和:", greenwood_sum, "\n")
+cat("SE(S(8)):", se_s8, "\n")
+```
+
+### 使用R的survival包
+
+```{r km_survival_package}
+# 使用survival包计算
+km_fit <- survfit(Surv(time, event) ~ 1)
+
+# 查看详细结果
+summary(km_fit)
+
+# 绘制KM曲线
+plot(km_fit, conf.int = TRUE,
+     xlab = "Time", ylab = "Survival Probability",
+     main = "Kaplan-Meier Survival Curve",
+     col = c("blue", "red", "red"),
+     lwd = 2)
+legend("topright", c("Survival", "95% CI"),
+       col = c("blue", "red"), lwd = 2)
+```
+
+## 2.2 置信区间
+
+### 三种置信区间方法
+
+```{r km_ci_methods}
+# 使用lung数据集
+data(lung)
+lung_clean <- lung %>% filter(!is.na(sex))
+
+# 计算不同类型的置信区间
+km_plain <- survfit(Surv(time, status - 1) ~ 1, data = lung_clean, conf.type = "plain")
+km_log <- survfit(Surv(time, status - 1) ~ 1, data = lung_clean, conf.type = "log")
+km_loglog <- survfit(Surv(time, status - 1) ~ 1, data = lung_clean, conf.type = "log-log")
+
+# 比较在特定时间点的CI
+time_point <- 365
+
+# 提取在该时间点的估计
+summary(km_plain, times = time_point)$surv
+summary(km_log, times = time_point)$surv
+summary(km_loglog, times = time_point)$surv
+
+# 可视化比较
+par(mfrow = c(1, 3))
+plot(km_plain, conf.int = TRUE, main = "Plain CI",
+     xlab = "Days", ylab = "Survival", xlim = c(0, 1000))
+plot(km_log, conf.int = TRUE, main = "Log CI",
+     xlab = "Days", ylab = "Survival", xlim = c(0, 1000))
+plot(km_loglog, conf.int = TRUE, main = "Log-Log CI", # Default method
+     xlab = "Days", ylab = "Survival", xlim = c(0, 1000))
+par(mfrow = c(1, 1))
+```
+
+## 2.3 Backward Calculation（反推计算）
+
+从KM估计反推原始数据是重要的考试技能。给定$\hat{S}(t)$的乘积形式和样本量$n$，需要确定每个时间点的事件数$d_i$、风险集$r_i$、审查数$c_i$。
+
+**核心公式**：$$\frac{d_i}{r_i} = 1 - \frac{\hat{S}(t_i)}{\hat{S}(t_{i-1})}$$
+
+**计算方法**：
+
+1. **读取风险集**：若$\hat{S}(t_i) = \frac{a}{b} \times \hat{S}(t_{i-1})$，则$r_i = b$，$d_i = b - a$
+2. **追踪变化**：$r_{i+1} = r_i - d_i - c_i$，其中$c_i$为$t_i$时刻审查数
+3. **处理early censoring**：若$r_1 < n$，则首次事件前有$n - r_1$个审查
+4. **验证**：检查$\sum d_i + \sum c_i = n$
+
+```{r backward_calculation}
+# 给定n=13的KM乘积形式：
+# S(τ1)=10/11, S(τ2)=(10/11)×(9/10), S(τ3)=(10/11)×(9/10)×(7/8),
+# S(τ4)=(10/11)×(9/10)×(7/8)×(4/6), S(τ5)=(...)×(1/2), S(τ6)=0
+
+n_total <- 13
+
+# 步骤1：从乘积分母读取ri，从(ri-di)/ri推di
+backward_data <- data.frame(
+  time = paste0("τ", 1:6),
+  factor = c("10/11", "9/10", "7/8", "4/6", "1/2", "0/1"),
+  r_i = c(11, 10, 8, 6, 2, 1),
+  d_i = c(1, 1, 1, 2, 1, 1)
+)
+
+# 步骤2：计算审查数 ci = (ri - di) - r(i+1)
+backward_data$c_i <- c(
+  (11-1) - 10,  # τ1后
+  (10-1) - 8,   # τ2后
+  (8-1) - 6,    # τ3后
+  (6-2) - 2,    # τ4后
+  (2-1) - 1,    # τ5后
+  0             # τ6后
+)
+
+print(backward_data[, c("time", "factor", "r_i", "d_i", "c_i")])
+
+# 步骤3：验证
+cat("\n验证:\n")
+cat("失败总数 =", sum(backward_data$d_i), "\n")
+cat("τ1前审查 = n - r1 =", n_total - backward_data$r_i[1], "\n")
+cat("τ1后审查 =", sum(backward_data$c_i), "\n")
+cat("总审查数k =", (n_total - backward_data$r_i[1]) + sum(backward_data$c_i), "\n")
+cat("总计 =", sum(backward_data$d_i) + (n_total - backward_data$r_i[1]) + sum(backward_data$c_i),
+    "(= n) ✓\n")
+```
+
+**考试要点**：
+- 从分母读$r_i$最直接
+- 注意$r_1 < n$的情况（early censoring）
+- 必须验证总数
+- Reverse KM：将审查视为"事件"来估计审查分布$\hat{G}(t) = P(C > t)$
+
+## 2.4 生存百分位数和RMST
+
+**关键概念**：
+- **中位生存时间**：$S(t_{0.5}) = 0.5$时的时间点
+- **p-th百分位数**：最小的$t_p$使得$\hat{S}(t_p) \le 1-p$
+- **RMST (Restricted Mean Survival Time)**：限制在时间$\tau$内的平均生存时间，$RMST(\tau) = \int_0^\tau S(t)dt$（KM曲线下面积）
+
+```{r survival_quantiles_rmst}
+# 使用lung数据
+km_lung <- survfit(Surv(time, status - 1) ~ 1, data = lung_clean)
+
+# 提取中位生存时间
+median_surv <- surv_median(km_lung)
+cat("中位生存时间:", round(median_surv$median, 1), "天\n")
+cat("95% CI:", round(median_surv$lower, 1), "到", round(median_surv$upper, 1), "天\n\n")
+
+# 计算25%, 50%, 75%分位数
+quantiles <- quantile(km_lung, probs = c(0.25, 0.5, 0.75))
+cat("生存百分位数:\n")
+print(quantiles)
+
+# 计算RMST - 仅提取关键信息
+tau <- 365
+rmst_obj <- summary(km_lung, rmean = tau)
+rmst_value <- rmst_obj$table["*rmean"]
+rmst_se <- rmst_obj$table["*se(rmean)"]
+
+cat("\n限制性平均生存时间 (RMST at τ=365天):\n")
+cat("RMST =", round(rmst_value, 1), "天\n")
+cat("SE =", round(rmst_se, 2), "\n")
+cat("95% CI = [", round(rmst_value - 1.96*rmst_se, 1), ",",
+    round(rmst_value + 1.96*rmst_se, 1), "]\n")
+
+# 可视化：显示中位生存时间和百分位数
+plot(km_lung, conf.int = TRUE,
+     xlab = "Days", ylab = "Survival Probability",
+     main = "Kaplan-Meier Curve with Percentiles")
+abline(h = c(0.25, 0.5, 0.75), col = "red", lty = 2, lwd = 0.5)
+abline(v = median_surv$median, col = "red", lty = 2, lwd = 2)
+text(median_surv$median + 50, 0.55,
+     paste("Median =", round(median_surv$median, 1), "days"), col = "red")
+# 标注阴影区域表示RMST
+polygon(c(0, km_lung$time[km_lung$time <= tau],
+          tau, 0),
+        c(0, km_lung$surv[km_lung$time <= tau],
+          km_lung$surv[max(which(km_lung$time <= tau))], 0),
+        col = rgb(0, 0, 1, 0.1), border = NA)
+text(tau/2, 0.3, paste("RMST =", round(rmst_value, 0), "days"),
+     col = "blue", cex = 0.8)
+```
+
+**考试重点**：
+- 从KM曲线读取中位生存时间：找到曲线首次穿过0.5的时间点
+- 如果曲线未达到某个百分位数（如0.25），则该百分位数未定义
+- RMST用于当中位数未达到时，或需要比较平均生存时间时
+
+## 2.5 其他估计量
+
+### Nelson-Aalen估计量
+
+```{r nelson_aalen}
+# 计算Nelson-Aalen累积风险估计
+km_lung <- survfit(Surv(time, status - 1) ~ 1, data = lung_clean)
+
+# 提取累积风险
+na_est <- data.frame(
+  time = km_lung$time,
+  n_event = km_lung$n.event,
+  n_risk = km_lung$n.risk,
+  cumhaz = cumsum(km_lung$n.event / km_lung$n.risk)  # Nelson-Aalen
+)
+
+# KM隐含的累积风险
+na_est$cumhaz_km <- -log(km_lung$surv)
+
+# Fleming-Harrington估计
+na_est$surv_fh <- exp(-na_est$cumhaz)
+na_est$surv_km <- km_lung$surv
+
+# 比较
+head(na_est, 10)
+
+# 可视化比较
+par(mfrow = c(1, 2))
+plot(na_est$time, na_est$cumhaz, type = "s", col = "blue", lwd = 2,
+     xlab = "Time", ylab = "Cumulative Hazard",
+     main = "Nelson-Aalen vs KM Cumulative Hazard")
+lines(na_est$time, na_est$cumhaz_km, type = "s", col = "red", lwd = 2, lty = 2)
+legend("topleft", c("Nelson-Aalen", "KM (-log S)"),
+       col = c("blue", "red"), lwd = 2, lty = c(1, 2))
+
+plot(na_est$time, na_est$surv_fh, type = "s", col = "blue", lwd = 2,
+     xlab = "Time", ylab = "Survival",
+     main = "Fleming-Harrington vs KM Survival")
+lines(na_est$time, na_est$surv_km, type = "s", col = "red", lwd = 2, lty = 2)
+legend("topright", c("Fleming-Harrington", "Kaplan-Meier"),
+       col = c("blue", "red"), lwd = 2, lty = c(1, 2))
+par(mfrow = c(1, 1))
+```
+
+# Chapter 3: 比较两组生存曲线
+
+## 3.1 Logrank检验
+
+### 手工计算示例
+
+```{r logrank_manual}
+# 示例数据：两组的生存时间
+group1_time <- c(6, 7, 10, 15, 19, 25)
+group1_event <- c(1, 1, 1, 1, 0, 0)
+
+group2_time <- c(1, 1, 2, 2, 3, 4, 4, 8, 17, 23)
+group2_event <- c(1, 1, 1, 1, 1, 0, 1, 1, 0, 0)
+
+# 合并数据
+surv_data <- data.frame(
+  time = c(group1_time, group2_time),
+  event = c(group1_event, group2_event),
+  group = c(rep("Group 1", length(group1_time)),
+            rep("Group 2", length(group2_time)))
+)
+
+# 使用survival包进行logrank检验
+logrank_test <- survdiff(Surv(time, event) ~ group, data = surv_data)
+print(logrank_test)
+
+# 手工构建logrank表格（仅显示有事件的时间）
+event_times <- sort(unique(surv_data$time[surv_data$event == 1]))
+
+logrank_table <- data.frame(
+  time = event_times,
+  n1 = sapply(event_times, function(t) sum(surv_data$time >= t & surv_data$group == "Group 1")),
+  n2 = sapply(event_times, function(t) sum(surv_data$time >= t & surv_data$group == "Group 2")),
+  d1 = sapply(event_times, function(t) sum(surv_data$time == t & surv_data$event == 1 & surv_data$group == "Group 1")),
+  d2 = sapply(event_times, function(t) sum(surv_data$time == t & surv_data$event == 1 & surv_data$group == "Group 2"))
+)
+
+logrank_table$n_total <- logrank_table$n1 + logrank_table$n2
+logrank_table$d_total <- logrank_table$d1 + logrank_table$d2
+logrank_table$E1 <- (logrank_table$n1 * logrank_table$d_total) / logrank_table$n_total
+logrank_table$V <- with(logrank_table,
+                        (n1 * n2 * d_total * (n_total - d_total)) /
+                          (n_total^2 * (n_total - 1)))
+
+print(logrank_table)
+
+# 计算检验统计量
+O1 <- sum(logrank_table$d1)
+E1 <- sum(logrank_table$E1)
+V <- sum(logrank_table$V)
+chi_sq <- (O1 - E1)^2 / V
+p_value <- 1 - pchisq(chi_sq, df = 1)
+
+# 结果汇总
+test_results <- data.frame(
+  Statistic = c("Observed (O1)", "Expected (E1)", "Variance (V)", "χ²", "p-value"),
+  Value = c(O1, round(E1, 2), round(V, 2), round(chi_sq, 3), format.pval(p_value))
+)
+kable(test_results, caption = "Logrank检验统计量计算")
+```
+
+### 使用survminer包可视化
+
+```{r logrank_visualization}
+# 使用lung数据集按性别分组
+km_sex <- survfit(Surv(time, status - 1) ~ sex, data = lung_clean)
+
+# 使用survminer绘制美观的KM曲线
+ggsurvplot(km_sex,
+           data = lung_clean,
+           pval = TRUE,  # 显示p值
+           conf.int = TRUE,  # 显示置信区间
+           risk.table = TRUE,  # 显示风险表
+           risk.table.height = 0.3,
+           xlab = "Time (days)",
+           ylab = "Survival Probability",
+           title = "Survival Curves by Sex",
+           legend.labs = c("Male", "Female"),
+           palette = c("#E7B800", "#2E9FDF"),
+           ggtheme = theme_minimal())
+```
+
+## 3.2 其他检验方法
+
+### Wilcoxon检验和加权检验
+
+```{r weighted_tests}
+# Logrank (G^{0,0})
+logrank <- survdiff(Surv(time, status - 1) ~ sex, data = lung_clean, rho = 0)
+cat("Logrank Test (rho=0):\n")
+print(logrank)
+
+# Peto-Peto / Wilcoxon (G^{1,0})
+wilcoxon <- survdiff(Surv(time, status - 1) ~ sex, data = lung_clean, rho = 1)
+cat("\nWilcoxon Test (rho=1, emphasizes early differences):\n")
+print(wilcoxon)
+
+# 检验结果比较
+comparison_df <- data.frame(
+  Test = c("Logrank (rho=0)", "Wilcoxon (rho=1)"),
+  Chi_square = c(round(logrank$chisq, 3), round(wilcoxon$chisq, 3)),
+  p_value = c(format.pval(1 - pchisq(logrank$chisq, 1)),
+              format.pval(1 - pchisq(wilcoxon$chisq, 1)))
+)
+kable(comparison_df, caption = "Logrank vs Wilcoxon检验比较")
+
+# 可视化观测值 vs 期望值
+test_comparison <- data.frame(
+  Group = c("Male", "Female"),
+  Observed = logrank$obs,
+  Expected = logrank$exp
+)
+
+# 创建条形图比较
+library(tidyr)
+test_long <- test_comparison %>%
+  pivot_longer(cols = c(Observed, Expected),
+               names_to = "Type", values_to = "Count")
+
+ggplot(test_long, aes(x = Group, y = Count, fill = Type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Logrank Test: Observed vs Expected Events",
+       subtitle = paste("Chi-square =", round(logrank$chisq, 2),
+                       ", p-value =", round(1 - pchisq(logrank$chisq, 1), 4)),
+       x = "Group", y = "Number of Events") +
+  scale_fill_manual(values = c("Observed" = "steelblue", "Expected" = "coral")) +
+  theme_minimal() +
+  geom_text(aes(label = round(Count, 1)), position = position_dodge(0.9), vjust = -0.5)
+```
+
+## 3.3 分层Logrank检验
+
+```{r stratified_logrank}
+# 示例：控制ECOG表现状态后比较性别差异
+# 首先检查数据
+table(lung_clean$sex, lung_clean$ph.ecog)
+
+# 分层logrank检验
+stratified_logrank <- survdiff(Surv(time, status - 1) ~ sex + strata(ph.ecog),
+                                data = lung_clean)
+print(stratified_logrank)
+
+# 可视化分层后的生存曲线
+cat("\n### 分层后各层的生存曲线\n")
+
+# 为每个ECOG层绘制KM曲线
+lung_clean_ecog <- lung_clean %>% filter(!is.na(ph.ecog))
+ggsurvplot_facet(survfit(Surv(time, status - 1) ~ sex, data = lung_clean_ecog),
+                 data = lung_clean_ecog,
+                 facet.by = "ph.ecog",
+                 conf.int = TRUE,
+                 pval = TRUE,
+                 legend.labs = c("Male", "Female"),
+                 palette = c("#E7B800", "#2E9FDF"),
+                 title = "Survival Curves by Sex, Stratified by ECOG Performance Status",
+                 xlab = "Time (days)",
+                 ylab = "Survival Probability")
+```
+
+**分层logrank解释**：
+
+- 在每个ECOG层内比较性别差异
+- 然后将各层的统计量汇总（Mantel-Haenszel方法）
+- 控制了ECOG状态的混杂效应
+
+```{r stratified_comparison}
+# 比较非分层和分层结果
+unstratified <- survdiff(Surv(time, status - 1) ~ sex, data = lung_clean)
+stratified <- survdiff(Surv(time, status - 1) ~ sex + strata(ph.ecog), data = lung_clean)
+
+strat_comparison <- data.frame(
+  Test = c("非分层", "分层(by ECOG)"),
+  Chi_square = c(round(unstratified$chisq, 3), round(stratified$chisq, 3)),
+  p_value = c(format.pval(1 - pchisq(unstratified$chisq, 1)),
+              format.pval(1 - pchisq(stratified$chisq, 1)))
+)
+kable(strat_comparison, caption = "非分层vs分层Logrank检验")
+```
+
+# Chapter 4: Cox比例风险模型
+
+## 4.1 Cox模型基础
+
+### 单变量Cox模型
+
+```{r cox_univariate}
+# 单变量分析：性别
+cox_sex <- coxph(Surv(time, status - 1) ~ sex, data = lung_clean)
+summary(cox_sex)
+
+# 提取关键信息
+cox_summary <- data.frame(
+  Statistic = c("β (Coefficient)", "HR (风险比)", "95% CI Lower", "95% CI Upper", "Wald p-value"),
+  Value = c(
+    round(coef(cox_sex), 4),
+    round(exp(coef(cox_sex)), 3),
+    round(exp(confint(cox_sex))[1], 3),
+    round(exp(confint(cox_sex))[2], 3),
+    format.pval(summary(cox_sex)$coefficients[, "Pr(>|z|)"])
+  )
+)
+kable(cox_summary, caption = "单变量Cox模型关键结果（性别）")
+```
+
+**结果解释**：女性相比男性的HR = `r round(exp(coef(cox_sex)), 3)`，女性死亡风险降低`r round((1 - exp(coef(cox_sex))) * 100, 1)`%
+
+### Cox模型的Partial Likelihood（部分似然）
+
+**重要概念**：Cox模型使用**partial likelihood**而不是完整的likelihood。
+
+- **原因**：Cox模型是半参数模型，不对基线风险$h_0(t)$做参数假设
+- **方法**：通过条件在每个事件时间的风险集上，避免估计$h_0(t)$
+- **公式**：
+$$L(\beta) = \prod_{i=1}^D \frac{\exp(\beta^T Z_{(i)})}{\sum_{j \in R(t_{(i)})} \exp(\beta^T Z_j)}$$
+
+其中$R(t_i)$是时间$t_i$的风险集
+
+- **优点**：
+  1. 不需要指定$h_0(t)$的参数形式
+  2. 仍然可以进行有效推断
+  3. 计算相对简单
+
+### 多变量Cox模型
+
+```{r cox_multivariate}
+# 多变量模型
+cox_multi <- coxph(Surv(time, status - 1) ~ sex + age + ph.ecog,
+                   data = lung_clean)
+summary(cox_multi)
+
+# 比较调整前后的HR
+hr_unadj <- exp(coef(cox_sex))
+hr_adj <- exp(coef(cox_multi)["sex"])
+change_pct <- round((hr_adj - hr_unadj) / hr_unadj * 100, 1)
+
+adjustment_comparison <- data.frame(
+  Model = c("未调整", "调整(age, ECOG)"),
+  HR_sex = c(round(hr_unadj, 3), round(hr_adj, 3)),
+  Change = c("-", paste0(change_pct, "%"))
+)
+kable(adjustment_comparison, caption = "性别HR：调整前后比较")
+
+# 可视化HR和置信区间
+hr_data <- data.frame(
+  variable = names(coef(cox_multi)),
+  hr = exp(coef(cox_multi)),
+  lower = exp(confint(cox_multi)[, 1]),
+  upper = exp(confint(cox_multi)[, 2])
+)
+
+ggplot(hr_data, aes(x = variable, y = hr)) +
+  geom_point(size = 4) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  coord_flip() +
+  labs(title = "Hazard Ratios with 95% Confidence Intervals",
+       x = "Variable", y = "Hazard Ratio") +
+  theme_minimal()
+```
+
+**预测生存曲线**：基于多变量Cox模型预测不同协变量组合的生存概率
+
+```{r predicted_survival_curves}
+# 创建不同的协变量配置文件
+newdata <- expand.grid(
+  sex = c(1, 2),  # 1=male, 2=female
+  age = c(50, 70),  # 年龄50和70
+  ph.ecog = c(0, 2)  # ECOG 0和2
+)
+
+# 使用前6个配置文件进行演示
+newdata_demo <- newdata[c(1, 2, 5, 6), ]
+newdata_demo$profile <- c("Male,50,ECOG0", "Female,50,ECOG0",
+                          "Male,70,ECOG2", "Female,70,ECOG2")
+
+# 绘制预测生存曲线
+fit_curves <- survfit(cox_multi, newdata = newdata_demo)
+ggsurvplot(fit_curves, data = lung_clean,
+           conf.int = TRUE,
+           legend.labs = newdata_demo$profile,
+           title = "Predicted Survival Curves for Different Covariate Profiles",
+           xlab = "Time (days)",
+           ylab = "Survival Probability",
+           palette = c("blue", "red", "green", "purple"))
+
+# 森林图展示所有协变量的HR
+ggforest(cox_multi, data = lung_clean,
+         main = "Hazard Ratios - Forest Plot")
+```
+
+## 4.2 模型推断
+
+### 三种检验统计量
+
+**重要提醒**：在Cox模型中，这些检验都是基于**partial likelihood**的。
+
+**三种检验方法**：
+
+1. **Wald检验**：基于参数估计$\hat{\beta}$和标准误$SE(\hat{\beta})$，$Z = \hat{\beta}/SE(\hat{\beta})$
+2. **Partial LR检验**：$\chi^2 = 2[\log L_{partial}(\hat{\beta}_{full}) - \log L_{partial}(\hat{\beta}_{reduced})]$，最可靠
+3. **Score检验**：基于零假设下的score函数（efficient score test）
+
+**理论关系**：通常 Partial LR ≤ Score ≤ Wald（对于小效应）
+
+```{r three_tests}
+# 构建嵌套模型比较（使用相同数据）
+lung_complete <- lung_clean %>% filter(!is.na(wt.loss))
+
+# Full model
+cox_full <- coxph(Surv(time, status - 1) ~ sex + age + ph.ecog + wt.loss,
+                  data = lung_complete)
+
+# Reduced model (without wt.loss)
+cox_reduced <- coxph(Surv(time, status - 1) ~ sex + age + ph.ecog,
+                     data = lung_complete)
+
+# 提取三种检验的结果
+wald_result <- summary(cox_full)$coefficients["wt.loss", ]
+lr_test <- anova(cox_reduced, cox_full, test = "Chisq")
+
+# 单个协变量的三种检验比较
+single_var_tests <- data.frame(
+  Test = c("Wald", "Partial LR", "Score (overall)"),
+  Chi_square = c(
+    round(wald_result["z"]^2, 3),
+    round(lr_test$Chisq[2], 3),
+    round(summary(cox_full)$sctest["test"], 3)
+  ),
+  p_value = c(
+    format.pval(wald_result["Pr(>|z|)"]),
+    format.pval(lr_test$`Pr(>Chi)`[2]),
+    format.pval(summary(cox_full)$sctest["pvalue"])
+  )
+)
+kable(single_var_tests, caption = "三种检验统计量比较（wt.loss系数）")
+
+# 整体模型检验
+overall_tests <- data.frame(
+  Test = c("Wald", "Score", "Partial LR"),
+  Chi_square = c(
+    round(summary(cox_full)$wald.test["test"], 3),
+    round(summary(cox_full)$sctest["test"], 3),
+    round(summary(cox_full)$logtest["test"], 3)
+  ),
+  df = c(
+    summary(cox_full)$wald.test["df"],
+    summary(cox_full)$sctest["df"],
+    summary(cox_full)$logtest["df"]
+  ),
+  p_value = c(
+    format.pval(summary(cox_full)$wald.test["pvalue"]),
+    format.pval(summary(cox_full)$sctest["pvalue"]),
+    format.pval(summary(cox_full)$logtest["pvalue"])
+  )
+)
+kable(overall_tests, caption = "整体模型检验（所有协变量）")
+```
+
+**考试要点**：
+
+- Partial LR test最可靠，特别是小样本情况
+- Wald检验最快但可能不准确
+- Score检验在零假设下计算，不需要拟合完整模型
+
+## 4.3 交互作用
+
+### 交互项模型
+
+```{r interaction}
+# 创建示例：性别和ECOG的交互
+# 首先将ECOG二分类
+lung_clean$ecog_binary <- ifelse(lung_clean$ph.ecog <= 1, 0, 1)
+
+# 无交互模型
+cox_no_int <- coxph(Surv(time, status - 1) ~ sex + ecog_binary,
+                    data = lung_clean)
+
+# 有交互模型
+cox_int <- coxph(Surv(time, status - 1) ~ sex * ecog_binary,
+                 data = lung_clean)
+
+cat("=== 无交互模型 ===\n")
+summary(cox_no_int)
+
+cat("\n=== 有交互模型 ===\n")
+summary(cox_int)
+
+# 检验交互是否显著
+lr_int <- anova(cox_no_int, cox_int, test = "Chisq")
+
+interaction_test <- data.frame(
+  Test = "交互项 LR Test",
+  Chi_square = round(lr_int$Chisq[2], 3),
+  df = lr_int$Df[2],
+  p_value = format.pval(lr_int$`Pr(>Chi)`[2])
+)
+kable(interaction_test, caption = "交互作用显著性检验")
+
+# 计算不同ECOG水平下的性别HR
+beta_sex <- coef(cox_int)["sex"]
+beta_ecog <- coef(cox_int)["ecog_binary"]
+beta_int <- coef(cox_int)["sex:ecog_binary"]
+
+hr_sex_ecog0 <- exp(beta_sex)
+hr_sex_ecog1 <- exp(beta_sex + beta_int)
+
+# HR随ECOG水平变化
+hr_by_ecog <- data.frame(
+  ECOG_Level = c("0-1", "2+"),
+  HR_Female_vs_Male = c(round(hr_sex_ecog0, 3), round(hr_sex_ecog1, 3)),
+  Interpretation = c(
+    paste0("风险降低 ", round((1-hr_sex_ecog0)*100, 1), "%"),
+    paste0("风险降低 ", round((1-hr_sex_ecog1)*100, 1), "%")
+  )
+)
+kable(hr_by_ecog, caption = "不同ECOG水平下的性别HR（女性 vs 男性）")
+
+# 可视化交互作用：不同ECOG水平下的生存曲线
+# 创建4组数据：男性ECOG0, 女性ECOG0, 男性ECOG1, 女性ECOG1
+newdata_int <- data.frame(
+  sex = c(1, 2, 1, 2),
+  ecog_binary = c(0, 0, 1, 1)
+)
+newdata_int$group <- c("Male,ECOG0-1", "Female,ECOG0-1",
+                       "Male,ECOG2+", "Female,ECOG2+")
+
+fit_int <- survfit(cox_int, newdata = newdata_int)
+ggsurvplot(fit_int, data = lung_clean,
+           conf.int = FALSE,
+           legend.labs = newdata_int$group,
+           title = "Interaction: Sex Effect Varies by ECOG Status",
+           xlab = "Time (days)",
+           ylab = "Survival Probability",
+           palette = c("blue", "red", "darkblue", "darkred"))
+
+# 条形图展示不同组的HR
+hr_int_data <- data.frame(
+  ECOG = c("0-1", "2+"),
+  HR = c(hr_sex_ecog0, hr_sex_ecog1),
+  lower = c(exp(confint(cox_int)["sex", 1]),
+            exp(beta_sex + beta_int +
+                sqrt(vcov(cox_int)["sex","sex"] +
+                     vcov(cox_int)["sex:ecog_binary","sex:ecog_binary"] +
+                     2*vcov(cox_int)["sex","sex:ecog_binary"]) * qnorm(0.025))),
+  upper = c(exp(confint(cox_int)["sex", 2]),
+            exp(beta_sex + beta_int +
+                sqrt(vcov(cox_int)["sex","sex"] +
+                     vcov(cox_int)["sex:ecog_binary","sex:ecog_binary"] +
+                     2*vcov(cox_int)["sex","sex:ecog_binary"]) * qnorm(0.975)))
+)
+
+ggplot(hr_int_data, aes(x = ECOG, y = HR)) +
+  geom_bar(stat = "identity", fill = "steelblue", alpha = 0.7) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  labs(title = "Sex HR (Female vs Male) by ECOG Status",
+       subtitle = "Evidence of interaction if bars are different heights",
+       x = "ECOG Status", y = "Hazard Ratio (Female vs Male)") +
+  theme_minimal()
+```
+
+## 4.4 处理并列事件时间
+
+```{r tied_times}
+# 比较不同的tie处理方法
+# Breslow方法（快速）
+cox_breslow <- coxph(Surv(time, status - 1) ~ sex + age,
+                     data = lung_clean, ties = "breslow")
+
+# Efron方法（默认，更准确）
+cox_efron <- coxph(Surv(time, status - 1) ~ sex + age,
+                   data = lung_clean, ties = "efron")
+
+# Exact方法（精确但慢）
+cox_exact <- coxph(Surv(time, status - 1) ~ sex + age,
+                   data = lung_clean, ties = "exact")
+
+# 比较结果
+cat("=== Breslow方法 ===\n")
+print(summary(cox_breslow)$coefficients)
+
+cat("\n=== Efron方法 ===\n")
+print(summary(cox_efron)$coefficients)
+
+cat("\n=== Exact方法 ===\n")
+print(summary(cox_exact)$coefficients)
+
+# 比较HR的差异
+hr_comparison <- data.frame(
+  Method = c("Breslow", "Efron", "Exact"),
+  HR_sex = c(exp(coef(cox_breslow)["sex"]),
+             exp(coef(cox_efron)["sex"]),
+             exp(coef(cox_exact)["sex"])),
+  HR_age = c(exp(coef(cox_breslow)["age"]),
+             exp(coef(cox_efron)["age"]),
+             exp(coef(cox_exact)["age"]))
+)
+print(hr_comparison)
+```
+
+## 4.5 分层Cox模型
+
+### 何时使用分层
+
+```{r stratified_cox}
+# 当某个变量违反PH假设时，可以分层
+
+# 按ECOG分层，估计性别效应
+cox_strat <- coxph(Surv(time, status - 1) ~ sex + strata(ph.ecog),
+                   data = lung_clean)
+
+# 不分层模型
+cox_nostrat <- coxph(Surv(time, status - 1) ~ sex + ph.ecog,
+                     data = lung_clean)
+
+cat("=== 不分层模型 ===\n")
+summary(cox_nostrat)
+
+cat("\n=== 分层模型 (stratified by ECOG) ===\n")
+summary(cox_strat)
+```
+
+**分层模型解释**：
+
+- **分层模型**：允许每个ECOG层级有不同的基线风险$h_0^{(k)}(t)$，但性别的效应$\beta$在所有层级中相同
+- **不分层模型**：假设ECOG的效应是比例的（PH假设）
+- **使用场景**：当某变量违反PH假设时，对该变量分层
+
+```{r stratified_cox_viz}
+# 可视化分层模型：不同ECOG层的生存曲线
+# 为每个ECOG层级绘制性别的生存曲线
+lung_clean$ecog_group <- factor(lung_clean$ph.ecog,
+                                levels = c(0, 1, 2, 3),
+                                labels = c("ECOG 0", "ECOG 1", "ECOG 2", "ECOG 3"))
+
+# 使用分层模型预测
+# 为男性和女性创建数据
+newdata_strat <- expand.grid(
+  sex = c(1, 2),
+  ph.ecog = c(0, 1, 2, 3)
+)
+newdata_strat$label <- paste(ifelse(newdata_strat$sex == 1, "Male", "Female"),
+                             paste0("ECOG", newdata_strat$ph.ecog), sep = ",")
+
+# 注意：分层模型的survfit需要特殊处理
+# 我们分别绘制每个层级的KM曲线
+par(mfrow = c(2, 2))
+for (ecog_val in 0:3) {
+  if (sum(lung_clean$ph.ecog == ecog_val, na.rm = TRUE) > 5) {
+    data_subset <- lung_clean[lung_clean$ph.ecog == ecog_val, ]
+    km_subset <- survfit(Surv(time, status - 1) ~ sex, data = data_subset)
+    plot(km_subset, col = c("blue", "red"), lwd = 2,
+         main = paste("ECOG", ecog_val, "- Stratified by Sex"),
+         xlab = "Time (days)", ylab = "Survival Probability",
+         conf.int = FALSE)
+    legend("topright", legend = c("Male", "Female"),
+           col = c("blue", "red"), lwd = 2)
+  }
+}
+par(mfrow = c(1, 1))
+
+# 比较分层和非分层模型的系数
+coef_comparison <- data.frame(
+  Model = c("Non-stratified", "Stratified"),
+  Sex_HR = c(round(exp(coef(cox_nostrat)["sex"]), 3),
+             round(exp(coef(cox_strat)["sex"]), 3)),
+  Sex_SE = c(round(sqrt(vcov(cox_nostrat)["sex", "sex"]), 4),
+             round(sqrt(vcov(cox_strat)["sex", "sex"]), 4))
+)
+kable(coef_comparison, caption = "分层vs非分层模型比较")
+```
+
+**分层模型的优势**：
+
+- 不假设ECOG对风险的比例性（允许违反PH假设）
+- 允许每个ECOG层有完全不同的基线风险曲线$h_0^{(k)}(t)$
+- 仍然能够估计性别的效应（假设在各层中效应相同）
+
+```{r stratified_note, echo=FALSE}
+```
+
+## 4.6 基线生存和预测
+
+### 估计基线生存函数
+
+```{r baseline_survival}
+# 拟合模型
+cox_model <- coxph(Surv(time, status - 1) ~ sex + age, data = lung_clean)
+
+# 估计基线生存（所有协变量为0时）
+baseline <- basehaz(cox_model, centered = FALSE)
+head(baseline)
+
+# 绘制基线累积风险
+plot(baseline$time, baseline$hazard, type = "s",
+     xlab = "Time (days)", ylab = "Cumulative Baseline Hazard",
+     main = "Baseline Cumulative Hazard Function",
+     col = "blue", lwd = 2)
+
+# 基线生存函数
+baseline$surv <- exp(-baseline$hazard)
+plot(baseline$time, baseline$surv, type = "s",
+     xlab = "Time (days)", ylab = "Baseline Survival",
+     main = "Baseline Survival Function",
+     col = "red", lwd = 2)
+```
+
+### 个体预测生存曲线
+
+```{r individual_prediction}
+# 为特定协变量组合预测生存曲线
+
+# 创建新数据：60岁男性和60岁女性
+newdata <- data.frame(
+  sex = c(1, 2),
+  age = c(60, 60)
+)
+
+# 预测生存曲线
+surv_pred <- survfit(cox_model, newdata = newdata)
+
+# 绘制
+plot(surv_pred, col = c("blue", "red"), lwd = 2,
+     xlab = "Time (days)", ylab = "Survival Probability",
+     main = "Predicted Survival: 60-year-old Male vs Female")
+legend("topright", c("Male, 60 years", "Female, 60 years"),
+       col = c("blue", "red"), lwd = 2)
+```
+
+# Chapter 5: 模型诊断
+
+## 5.1 检验比例风险假设
+
+**PH假设检验方法**：
+
+1. **图形法**：log-log plot应显示平行线
+2. **Schoenfeld残差检验**：检验系数是否随时间变化
+3. **时间交互项**：添加`covariate × time`项，检验是否显著
+
+### 图形方法
+
+```{r ph_graphical}
+# 方法1: log-log plot
+km_sex <- survfit(Surv(time, status - 1) ~ sex, data = lung_clean)
+
+# 提取生存概率
+sex_levels <- c(1, 2)
+plot_data <- lapply(sex_levels, function(s) {
+  idx <- which(lung_clean$sex == s)
+  km <- survfit(Surv(time, status - 1) ~ 1, data = lung_clean[idx, ])
+  data.frame(
+    time = km$time,
+    surv = km$surv,
+    log_log_surv = log(-log(km$surv)),
+    sex = s
+  )
+})
+
+plot_data <- do.call(rbind, plot_data)
+
+# 绘制log(-log(S(t))) vs log(t)
+ggplot(plot_data, aes(x = log(time), y = log_log_surv, color = factor(sex))) +
+  geom_step(size = 1) +
+  labs(title = "Log-Log Plot to Check PH Assumption",
+       x = "log(Time)", y = "log(-log(S(t)))",
+       color = "Sex") +
+  scale_color_manual(values = c("blue", "red"), labels = c("Male", "Female")) +
+  theme_minimal() +
+  theme(legend.position = "top")
+```
+
+### Schoenfeld残差检验
+
+```{r schoenfeld_test}
+# 拟合Cox模型
+cox_model <- coxph(Surv(time, status - 1) ~ sex + age + ph.ecog,
+                   data = lung_clean)
+
+# Schoenfeld残差检验
+ph_test <- cox.zph(cox_model)
+print(ph_test)
+
+# 绘制Schoenfeld残差
+par(mfrow = c(2, 2))
+plot(ph_test)
+par(mfrow = c(1, 1))
+
+# 使用ggcoxzph（更美观）
+ggcoxzph(ph_test,
+         font.main = 12,
+         font.x = 10,
+         font.y = 10)
+```
+
+**Schoenfeld残差检验解释**：
+
+- **小p值（<0.05）**：该协变量违反PH假设
+- **残差图**：应看到水平线（无趋势）表明PH假设成立
+- **显著非零斜率**：提示系数随时间变化
+
+```{r ph_test_note, echo=FALSE}
+```
+
+## 5.2 残差分析
+
+### Martingale残差
+
+```{r martingale_residuals}
+# 计算martingale残差
+mart_resid <- residuals(cox_model, type = "martingale")
+
+# 获取模型实际使用的数据
+model_data <- model.frame(cox_model)
+age_used <- model_data$age
+
+# 检查函数形式（例如：年龄的函数形式）
+plot(age_used, mart_resid,
+     xlab = "Age", ylab = "Martingale Residuals",
+     main = "Martingale Residuals vs Age")
+abline(h = 0, col = "red", lty = 2)
+lines(lowess(age_used, mart_resid), col = "blue", lwd = 2)
+```
+
+**Martingale残差用途**：检查协变量的函数形式是否正确。若观察到非线性关系（蓝色曲线不平），可能需要变换（如log、平方项等）
+
+```{r martingale_note, echo=FALSE}
+```
+
+### Deviance残差
+
+```{r deviance_residuals}
+# Deviance残差（识别异常值）
+dev_resid <- residuals(cox_model, type = "deviance")
+
+# 使用模型实际使用的数据
+model_data <- model.frame(cox_model)
+age_used <- model_data$age
+
+# 绘制
+plot(age_used, dev_resid,
+     xlab = "Age", ylab = "Deviance Residuals",
+     main = "Deviance Residuals for Outlier Detection")
+abline(h = c(-2, 0, 2), col = c("red", "black", "red"), lty = c(2, 1, 2))
+
+# 识别极端值
+outliers <- which(abs(dev_resid) > 2)
+outlier_summary <- data.frame(
+  Criterion = "|Deviance| > 2",
+  N_outliers = length(outliers),
+  Percentage = paste0(round(length(outliers) / nrow(model_data) * 100, 1), "%")
+)
+kable(outlier_summary, caption = "Deviance残差异常值检测")
+```
+
+### 影响诊断
+
+```{r influence_diagnostics}
+# dfbeta - 删除观测对系数的影响
+dfbeta_vals <- residuals(cox_model, type = "dfbeta")
+
+# 绘制第一个协变量（sex）的dfbeta
+plot(dfbeta_vals[, 1],
+     ylab = "dfbeta for Sex",
+     xlab = "Observation Index",
+     main = "Influence on Sex Coefficient")
+abline(h = 0, col = "red")
+
+# 识别有影响的观测
+influential <- which(abs(dfbeta_vals[, 1]) > 0.2)
+influence_summary <- data.frame(
+  Criterion = "|dfbeta| > 0.2",
+  N_influential = length(influential),
+  Percentage = paste0(round(length(influential) / nrow(dfbeta_vals) * 100, 1), "%")
+)
+kable(influence_summary, caption = "影响诊断：对性别系数有较大影响的观测")
+```
+
+## 5.3 模型拟合优度
+
+### AIC模型选择
+
+```{r aic_selection}
+# 比较不同模型
+model1 <- coxph(Surv(time, status - 1) ~ sex, data = lung_clean)
+model2 <- coxph(Surv(time, status - 1) ~ sex + age, data = lung_clean)
+model3 <- coxph(Surv(time, status - 1) ~ sex + age + ph.ecog, data = lung_clean)
+model4 <- coxph(Surv(time, status - 1) ~ sex + age + ph.ecog + wt.loss,
+                data = lung_clean)
+
+# 比较AIC
+aic_comparison <- data.frame(
+  Model = c("sex", "sex + age", "sex + age + ecog", "sex + age + ecog + wt.loss"),
+  AIC = c(AIC(model1), AIC(model2), AIC(model3), AIC(model4)),
+  LogLik = c(logLik(model1), logLik(model2), logLik(model3), logLik(model4))
+)
+
+kable(aic_comparison, digits = 2, caption = "模型比较：AIC和对数似然")
+```
+
+**模型选择准则**：AIC越小越好（平衡拟合优度和模型复杂度）。$AIC = -2\log L + 2k$，其中$k$为参数个数。
+
+```{r aic_note, echo=FALSE}
+```
+
+# Chapter 6: 参数模型
+
+## 6.1 指数分布
+
+### 指数分布的性质
+
+```{r exponential_model}
+# 拟合指数分布（使用survreg，AFT参数化）
+exp_model <- survreg(Surv(time, status - 1) ~ sex + age,
+                     data = lung_clean, dist = "exponential")
+summary(exp_model)
+
+# 注意：survreg使用AFT参数化
+# 转换为PH参数化
+# AFT: log(T) = mu + beta*Z + sigma*W
+# PH: h(t|Z) = h0(t) * exp(beta_PH * Z)
+# 关系: beta_PH = -beta_AFT / sigma
+
+# 对于指数分布，sigma = 1
+beta_aft <- coef(exp_model)
+beta_ph <- -beta_aft  # 除了截距
+
+# 参数比较
+param_comparison <- data.frame(
+  Parameter = names(beta_aft)[-1],
+  AFT_beta = round(beta_aft[-1], 4),
+  PH_beta = round(beta_ph[-1], 4),
+  HR = round(exp(beta_ph[-1]), 3)
+)
+kable(param_comparison, caption = "指数模型：AFT vs PH参数化")
+
+# 验证指数假设
+cox_model <- coxph(Surv(time, status - 1) ~ sex + age, data = lung_clean)
+km_fit <- survfit(cox_model)
+
+# 绘制log(S(t)) vs t
+plot(km_fit$time, log(km_fit$surv), type = "l",
+     xlab = "Time", ylab = "log(S(t))",
+     main = "Check Exponential Assumption: log(S(t)) vs t",
+     col = "blue", lwd = 2)
+abline(a = 0, b = -0.002, col = "red", lty = 2)  # 参考线
+```
+
+**指数分布检验**：若$\log S(t)$对$t$近似直线，则支持指数分布假设（恒定风险）
+
+```{r exp_check_note, echo=FALSE}
+```
+
+### 无记忆性质验证
+
+```{r memoryless_property}
+# 指数分布的无记忆性质
+# P(T > s+t | T > s) = P(T > t)
+
+lambda <- 0.01  # 假设的hazard rate
+s <- 100
+t <- 50
+
+# 条件概率
+cond_prob <- exp(-lambda * t)
+
+# 直接计算
+prob_s <- exp(-lambda * s)
+prob_st <- exp(-lambda * (s + t))
+cond_prob_direct <- prob_st / prob_s
+
+# 验证结果
+memoryless_check <- data.frame(
+  Method = c("无记忆性质 P(T>t)", "条件概率 P(T>s+t|T>s)", "差异"),
+  Value = c(cond_prob, cond_prob_direct, abs(cond_prob - cond_prob_direct))
+)
+kable(memoryless_check, digits = 8, caption = "指数分布无记忆性质验证")
+```
+
+## 6.2 Weibull分布
+
+### Weibull模型
+
+```{r weibull_model}
+# 拟合Weibull分布
+weibull_model <- survreg(Surv(time, status - 1) ~ sex + age,
+                         data = lung_clean, dist = "weibull")
+summary(weibull_model)
+
+# Weibull参数
+# h(t) = lambda * alpha * t^(alpha-1)
+# S(t) = exp(-lambda * t^alpha)
+
+# 从survreg提取参数
+scale <- weibull_model$scale  # 这是1/alpha
+alpha <- 1 / scale
+
+# Weibull参数解释
+alpha_interp <- ifelse(alpha > 1, "风险递增",
+                      ifelse(alpha < 1, "风险递减", "恒定风险（指数分布）"))
+
+weibull_params <- data.frame(
+  Parameter = c("Shape (α)", "Scale (1/α)", "Interpretation"),
+  Value = c(round(alpha, 3), round(scale, 3), alpha_interp)
+)
+kable(weibull_params, caption = "Weibull分布参数")
+
+# AFT系数和PH系数比较
+beta_aft_weibull <- coef(weibull_model)
+beta_ph_weibull <- -beta_aft_weibull / scale
+
+weibull_coef <- data.frame(
+  Variable = names(beta_aft_weibull)[-1],
+  AFT_beta = round(beta_aft_weibull[-1], 4),
+  PH_beta = round(beta_ph_weibull[-1], 4),
+  HR = round(exp(beta_ph_weibull[-1]), 3)
+)
+kable(weibull_coef, caption = "Weibull模型系数：AFT vs PH参数化")
+```
+
+### 检验Weibull假设
+
+```{r check_weibull}
+# 绘制log(H(t)) vs log(t)
+# 如果是Weibull分布，应该是直线，斜率为alpha
+
+km_fit <- survfit(Surv(time, status - 1) ~ 1, data = lung_clean)
+
+# 计算累积风险
+cumhaz <- -log(km_fit$surv)
+
+# 去除0值
+valid_idx <- cumhaz > 0 & km_fit$time > 0
+
+plot(log(km_fit$time[valid_idx]), log(cumhaz[valid_idx]),
+     xlab = "log(Time)", ylab = "log(Cumulative Hazard)",
+     main = "Check Weibull Assumption",
+     pch = 19, col = "blue")
+
+# 拟合直线
+fit_line <- lm(log(cumhaz[valid_idx]) ~ log(km_fit$time[valid_idx]))
+abline(fit_line, col = "red", lwd = 2)
+
+# 拟合结果
+weibull_fit_result <- data.frame(
+  Statistic = c("斜率 (α估计)", "截距", "R²"),
+  Value = c(round(coef(fit_line)[2], 3),
+           round(coef(fit_line)[1], 3),
+           round(summary(fit_line)$r.squared, 3))
+)
+kable(weibull_fit_result, caption = "Weibull假设检验：log(H)对log(t)的线性拟合")
+```
+
+## 6.3 Log-normal和其他分布
+
+```{r other_distributions}
+# Log-normal模型
+lognorm_model <- survreg(Surv(time, status - 1) ~ sex + age,
+                         data = lung_clean, dist = "lognormal")
+
+# Log-logistic模型
+loglogistic_model <- survreg(Surv(time, status - 1) ~ sex + age,
+                              data = lung_clean, dist = "loglogistic")
+
+# 比较所有模型的AIC
+model_comparison <- data.frame(
+  Distribution = c("Exponential", "Weibull", "Log-normal", "Log-logistic"),
+  AIC = c(AIC(exp_model), AIC(weibull_model),
+          AIC(lognorm_model), AIC(loglogistic_model)),
+  LogLik = c(logLik(exp_model), logLik(weibull_model),
+             logLik(lognorm_model), logLik(loglogistic_model))
+)
+
+kable(model_comparison, digits = 2, caption = "参数模型比较")
+```
+
+**最佳模型**：基于AIC准则，最佳模型为 **`r model_comparison$Distribution[which.min(model_comparison$AIC)]`**
+
+```{r param_best_note, echo=FALSE}
+```
+
+# Chapter 7: 高级主题
+
+## 7.1 竞争风险
+
+### 竞争风险示例
+
+```{r competing_risks}
+# 模拟竞争风险数据
+# 两种事件类型：类型1和类型2
+set.seed(789)
+n <- 200
+
+# 两种原因的事件时间
+time1 <- rexp(n, rate = 0.01)
+time2 <- rexp(n, rate = 0.015)
+censor_time <- runif(n, 0, 300)
+
+# 观测时间和事件类型
+obs_time <- pmin(time1, time2, censor_time)
+event_type <- ifelse(obs_time == censor_time, 0,
+                     ifelse(time1 < time2, 1, 2))
+
+# 创建数据框
+comp_risk_data <- data.frame(
+  time = obs_time,
+  event = event_type,
+  x = rnorm(n)  # 协变量
+)
+
+table(comp_risk_data$event)
+
+# Cause-specific hazard (Cox模型)
+# 只分析事件类型1（将类型2和删失都视为删失）
+comp_risk_data$event1 <- ifelse(comp_risk_data$event == 1, 1, 0)
+
+cox_cause1 <- coxph(Surv(time, event1) ~ x, data = comp_risk_data)
+summary(cox_cause1)
+
+# Cumulative Incidence Function
+km_overall <- survfit(Surv(time, event > 0) ~ 1, data = comp_risk_data)
+```
+
+**竞争风险分析要点**：
+
+1. **Cause-specific hazard**：使用Cox模型，将其他原因视为删失
+2. **Cumulative incidence function (CIF)**：考虑所有竞争事件
+3. **重要提醒**：当存在竞争风险时，$1 - S(t) \neq \sum CIF_k(t)$
+
+**考试重点**：理解cause-specific hazard与subdistribution hazard的区别
+
+```{r competing_risks_note, echo=FALSE}
+```
+
+## 7.2 时间依赖协变量
+
+### 简单示例
+
+```{r time_dependent}
+# 创建时间依赖协变量的简单示例
+# 假设治疗状态在时间50改变
+
+set.seed(456)
+n <- 50
+base_time <- rexp(n, 0.02)
+censor_time <- runif(n, 0, 150)
+
+# 观测时间和事件指示
+obs_time <- pmin(base_time, censor_time)
+event_indicator <- as.numeric(base_time < censor_time)
+
+# 创建时间段数据
+# 每个个体最多有两行：0-50和50-结束
+tdc_list <- list()
+for(i in 1:n) {
+  if(obs_time[i] <= 50) {
+    # 如果在50之前就结束，只有一行
+    tdc_list[[i]] <- data.frame(
+      id = i,
+      start = 0,
+      stop = obs_time[i],
+      event = event_indicator[i],
+      trt = 0,
+      age = rnorm(1, 60, 10)
+    )
+  } else {
+    # 如果存活超过50，有两行
+    tdc_list[[i]] <- data.frame(
+      id = c(i, i),
+      start = c(0, 50),
+      stop = c(50, obs_time[i]),
+      event = c(0, event_indicator[i]),
+      trt = c(0, 1),  # 治疗在时间50开始
+      age = rep(rnorm(1, 60, 10), 2)
+    )
+  }
+}
+
+tdc_data <- do.call(rbind, tdc_list)
+
+kable(head(tdc_data, 10), caption = "时间依赖协变量数据示例（前10行）")
+
+# 拟合时间依赖协变量模型
+cox_tdc <- coxph(Surv(start, stop, event) ~ trt + age, data = tdc_data)
+summary(cox_tdc)
+
+# 数据结构汇总
+tdc_summary <- data.frame(
+  Item = c("原始个体数", "数据总行数", "平均行数/个体"),
+  Value = c(n, nrow(tdc_data), round(nrow(tdc_data)/n, 2))
+)
+kable(tdc_summary, caption = "时间依赖协变量数据结构")
+```
+
+**时间依赖协变量模型要点**：
+
+1. **数据格式**：`Surv(start, stop, event)` - 每个时间段一行
+2. **协变量变化**：协变量可以在不同时间段改变值
+3. **数据扩展**：原始个体数 < 数据行数（每个个体可有多行）
+4. **风险集**：在时间$t$，风险集包括所有$(start, stop]$包含$t$的观测
+
+```{r tdc_note, echo=FALSE}
+```
+
+# Chapter 8: 实战案例
+
+## 8.1 完整分析流程
+
+### 案例：肺癌生存分析
+
+```{r complete_analysis}
+# 数据准备
+data(lung)
+lung_analysis <- lung %>%
+  filter(!is.na(ph.ecog)) %>%
+  mutate(
+    sex = factor(sex, levels = 1:2, labels = c("Male", "Female")),
+    status_binary = status - 1,
+    ecog_cat = factor(ph.ecog, levels = 0:3,
+                     labels = c("0", "1", "2", "3"))
+  )
+
+# 描述性统计
+descriptive_stats <- data.frame(
+  Item = c("样本量", "事件数", "删失数", "删失率"),
+  Value = c(nrow(lung_analysis),
+           sum(lung_analysis$status_binary),
+           sum(1 - lung_analysis$status_binary),
+           paste0(round(mean(1 - lung_analysis$status_binary) * 100, 1), "%"))
+)
+kable(descriptive_stats, caption = "描述性统计")
+
+kable(table(lung_analysis$sex, lung_analysis$status_binary),
+      caption = "按性别分组的事件分布")
+
+# 单变量分析
+cat("\n=== 单变量分析 ===\n")
+
+# 性别
+km_sex <- survfit(Surv(time, status_binary) ~ sex, data = lung_analysis)
+logrank_sex <- survdiff(Surv(time, status_binary) ~ sex, data = lung_analysis)
+cox_sex <- coxph(Surv(time, status_binary) ~ sex, data = lung_analysis)
+
+cat("\nKM中位生存时间:\n")
+print(surv_median(km_sex))
+
+cat("\nLogrank检验:\n")
+print(logrank_sex)
+
+cat("\nCox模型:\n")
+summary(cox_sex)
+
+# 绘制KM曲线
+ggsurvplot(km_sex,
+           data = lung_analysis,
+           pval = TRUE,
+           conf.int = TRUE,
+           risk.table = TRUE,
+           xlab = "Time (days)",
+           ylab = "Survival Probability",
+           title = "Survival by Sex",
+           legend.labs = c("Male", "Female"),
+           palette = c("#00BFC4", "#F8766D"))
+
+# 多变量分析
+cat("\n=== 多变量分析 ===\n")
+
+# 逐步添加变量
+cox_step1 <- coxph(Surv(time, status_binary) ~ sex, data = lung_analysis)
+cox_step2 <- coxph(Surv(time, status_binary) ~ sex + age, data = lung_analysis)
+cox_step3 <- coxph(Surv(time, status_binary) ~ sex + age + ecog_cat,
+                   data = lung_analysis)
+
+# LR检验比较模型
+cat("\n模型比较:\n")
+anova(cox_step1, cox_step2, cox_step3)
+
+# 最终模型
+cox_final <- cox_step3
+cat("\n最终模型:\n")
+summary(cox_final)
+
+# 模型诊断
+cat("\n=== 模型诊断 ===\n")
+
+# PH假设检验
+ph_test <- cox.zph(cox_final)
+print(ph_test)
+
+# 残差图
+par(mfrow = c(2, 2))
+plot(ph_test)
+par(mfrow = c(1, 1))
+
+# 报告结果
+median_surv <- surv_median(km_sex)
+median_results <- data.frame(
+  Sex = c("Male", "Female"),
+  Median_Survival = round(median_surv$median, 1),
+  CI_Lower = round(median_surv$lower, 1),
+  CI_Upper = round(median_surv$upper, 1)
+)
+kable(median_results, caption = "中位生存时间（天）")
+
+# 多变量Cox模型结果汇总
+coef_summary <- summary(cox_final)$coefficients
+hr_ci <- exp(confint(cox_final))
+final_results <- data.frame(
+  Variable = rownames(coef_summary),
+  HR = round(exp(coef_summary[, 1]), 3),
+  CI_Lower = round(hr_ci[, 1], 3),
+  CI_Upper = round(hr_ci[, 2], 3),
+  p_value = format.pval(coef_summary[, 5])
+)
+kable(final_results, caption = "多变量Cox模型最终结果")
+```
+
+## 8.2 模型解释和预测
+
+### 个体风险预测
+
+```{r risk_prediction}
+# 为不同风险组合预测生存曲线
+
+# 定义不同的风险档案
+risk_profiles <- data.frame(
+  sex = factor(c("Female", "Female", "Male", "Male"),
+               levels = c("Male", "Female")),
+  age = c(50, 70, 50, 70),
+  ecog_cat = factor(c("1", "1", "1", "1"),
+                   levels = c("0", "1", "2", "3"))
+)
+
+# 预测生存曲线
+surv_pred <- survfit(cox_final, newdata = risk_profiles)
+
+# 绘制
+plot(surv_pred, col = 1:4, lwd = 2,
+     xlab = "Time (days)", ylab = "Survival Probability",
+     main = "Predicted Survival Curves for Different Risk Profiles")
+legend("topright",
+       legend = c("Female, 50, ECOG 1", "Female, 70, ECOG 1",
+                  "Male, 50, ECOG 1", "Male, 70, ECOG 1"),
+       col = 1:4, lwd = 2)
+
+# 计算特定时间点的生存概率
+time_point <- 365
+pred_surv_1yr <- summary(surv_pred, times = time_point)
+
+# 1年生存概率预测表
+survival_1yr <- data.frame(
+  Profile = paste(risk_profiles$sex, risk_profiles$age, "岁, ECOG", risk_profiles$ecog_cat),
+  Survival_1yr = paste0(round(pred_surv_1yr$surv * 100, 1), "%"),
+  CI_Lower = paste0(round(pred_surv_1yr$lower * 100, 1), "%"),
+  CI_Upper = paste0(round(pred_surv_1yr$upper * 100, 1), "%")
+)
+kable(survival_1yr, caption = "1年生存概率预测（不同风险组合）")
+```
+
+# Chapter 9: 常见陷阱和注意事项
+
+## 9.1 风险集定义
+
+**示例数据**：2, 3+, 5, 8, 8+ （+表示删失）
+
+**风险集计算步骤**：
+
+| 时间点 | 事件 | 风险集大小 | 事件数 | 说明 |
+|--------|------|-----------|--------|------|
+| t=2 | 死亡 | r₁ = 5 | d₁ = 1 | 包括所有5个个体（含t=2死亡者） |
+| t=3 | 删失 | - | - | S(t)不变，风险集变为4 |
+| t=5 | 死亡 | r₂ = 3 | d₂ = 1 | 已去除t=2死亡和t=3删失 |
+| t=8 | 死亡 | r₃ = 2 | d₃ = 1 | - |
+| t=8 | 删失 | - | - | 同一时间点，删失在事件后处理 |
+
+**常见错误与正确做法**：
+
+- ✗ **错误**：在风险集中包含在该时间点删失的个体
+- ✓ **正确**：在风险集中包含在该时间点死亡的个体
+- ✓ **正确**：风险集是"刚好在时间$t$之前仍在风险中"的个体
+- ✓ **正确**：同一时间点的删失在事件之后处理
+
+```{r risk_set_note, echo=FALSE}
+```
+
+## 9.2 HR解释
+
+**HR (Hazard Ratio) 解释示例**：
+
+假设 $\beta = 0.5$，则 $HR = e^{0.5} = 1.649$
+
+**正确解释**：
+- ✓ "暴露组的风险是对照组的1.649倍"
+- ✓ "暴露组的风险比对照组增加64.9%"
+- ✓ "暴露使风险增加64.9%"
+
+**错误解释**：
+- ✗ "暴露组的生存概率是对照组的1.649倍"（HR是风险比，不是生存概率比）
+- ✗ "风险降低34.9%"（当HR>1时应该说增加）
+
+**保护因素** ($\beta = -0.5$，$HR = 0.607$)：
+- ✓ "保护因素，风险降低39.3%"
+- ✓ "风险是对照组的0.607倍"
+- ✓ "风险降低 = $(1 - 0.607) \times 100\% = 39.3\%$"
+
+**连续变量的HR解释**：
+- 若年龄的$\beta = 0.02$，$HR = 1.020$
+- ✓ "年龄每增加1岁，风险增加2.0%"
+- ✓ "年龄每增加10岁，风险增加$e^{10 \times 0.02} - 1 = 22.1\%$"
+
+```{r hr_interp_note, echo=FALSE}
+```
+
+## 9.3 调整前后HR变化
+
+```{r adjustment_effect}
+# 示例：混杂的影响
+set.seed(999)
+n <- 500
+
+# 生成数据，age是混杂因素
+age <- rnorm(n, 60, 10)
+treatment <- rbinom(n, 1, plogis((age - 60) / 10))  # 治疗与年龄相关
+time <- rexp(n, exp(-0.5 * treatment + 0.03 * age))
+event <- rbinom(n, 1, 0.7)
+
+conf_data <- data.frame(time, event, treatment, age)
+
+# 未调整模型
+cox_unadj <- coxph(Surv(time, event) ~ treatment, data = conf_data)
+
+# 调整模型
+cox_adj <- coxph(Surv(time, event) ~ treatment + age, data = conf_data)
+
+# 比较调整前后
+hr_unadj <- exp(coef(cox_unadj))
+hr_adj <- exp(coef(cox_adj)["treatment"])
+change_pct <- round((hr_adj - hr_unadj) / hr_unadj * 100, 1)
+
+confounding_comparison <- data.frame(
+  Model = c("未调整", "调整年龄"),
+  HR = c(round(hr_unadj, 3), round(hr_adj, 3)),
+  CI_Lower = c(round(exp(confint(cox_unadj))[1], 3),
+               round(exp(confint(cox_adj)["treatment", 1]), 3)),
+  CI_Upper = c(round(exp(confint(cox_unadj))[2], 3),
+               round(exp(confint(cox_adj)["treatment", 2]), 3)),
+  Change = c("-", paste0(change_pct, "%"))
+)
+kable(confounding_comparison, caption = "混杂效应示例：调整前后HR比较")
+```
+
+**混杂判断准则**：
+
+- HR变化 > 10%：提示存在混杂
+- 本例中变化 = `r change_pct`%，`r ifelse(abs(change_pct) > 10, "存在混杂", "混杂效应较小")`
+
+```{r confounding_note, echo=FALSE}
+```
+
+# 总结和考试提示
+
+## 关键公式速查
+
+```{r formula_summary, echo=FALSE}
+formulas <- data.frame(
+  Topic = c(
+    "Survival Function",
+    "Hazard Function",
+    "Cumulative Hazard",
+    "Relationship 1",
+    "Relationship 2",
+    "KM Estimator",
+    "Greenwood Variance",
+    "Logrank Statistic",
+    "Cox Model",
+    "Hazard Ratio",
+    "Backward Calculation"
+  ),
+  Formula = c(
+    "S(t) = P(T > t) = exp(-H(t))",
+    "h(t) = f(t)/S(t) = -d log S(t)/dt",
+    "H(t) = ∫ h(u)du = -log S(t)",
+    "h(t) = f(t)/S(t)",
+    "S(t) = exp(-∫ h(u)du)",
+    "Ŝ(t) = ∏(1 - d_i/r_i)",
+    "Var(Ŝ) = Ŝ²∑[d_i/(r_i(r_i-d_i))]",
+    "χ² = (O₁-E₁)²/V",
+    "h(t|Z) = h₀(t)exp(β'Z)",
+    "HR = exp(β)",
+    "d_i/r_i = 1 - Ŝ(t_i)/Ŝ(t_{i-1})"
+  )
+)
+
+kable(formulas, caption = "关键公式总结")
+```
+
+## 考试检查清单
+
+### 计算题检查点
+
+1. **KM估计**
+   - ✓ 风险集r_i的计算正确（包括当前时间点的事件，不包括删失）
+   - ✓ 逐步计算每个时间点的生存概率
+   - ✓ Greenwood方差只在事件时间求和
+   - ✓ 最终结果在[0,1]区间
+
+2. **Logrank检验**
+   - ✓ 每个事件时间都计算E_i和V_i
+   - ✓ 合并两组数据找所有事件时间
+   - ✓ 检验统计量=(O-E)²/V
+   - ✓ 自由度=组数-1
+
+3. **Cox模型解释**
+   - ✓ β>0 → HR>1 → 风险增加
+   - ✓ β<0 → HR<1 → 风险降低
+   - ✓ 说明参考组
+   - ✓ 连续变量说明单位（每增加1单位/10单位）
+   - ✓ CI不包含1则显著
+
+4. **Backward Calculation**
+   - ✓ 使用d_i/r_i = 1 - Ŝ(t_i)/Ŝ(t_{i-1})
+   - ✓ 追踪r_{i+1} = r_i - d_i - c_i
+   - ✓ 检查∑d_i + ∑c_i = n
+
+### 概念题要点
+
+```{r concept_checklist, echo=FALSE}
+concepts <- data.frame(
+  Topic = c(
+    "删失类型",
+    "PH假设",
+    "混杂",
+    "交互作用",
+    "分层",
+    "模型选择"
+  ),
+  Key_Points = c(
+    "右删失最常见；左截断≠左删失；非信息删失是关键假设",
+    "HR不随时间变化；log-log图平行；Schoenfeld检验",
+    ">10%HR变化提示混杂；调整后HR更准确",
+    "一个变量的效应取决于另一个变量；检验交互项系数",
+    "不同基线风险但相同β；用于PH假设违反",
+    "AIC越小越好；LR检验比较嵌套模型；平衡拟合和复杂度"
+  )
+)
+
+kable(concepts, caption = "关键概念总结")
+```
+
+---
+
+**祝考试顺利！记住：**
+
+1. 仔细阅读题目，明确问的是什么
+2. 检查计算中的每一步
+3. 解释结果时包含单位和方向
+4. 时间管理：先做有把握的题目
+5. 留出时间检查答案
+
+```{r session_info, echo=FALSE}
+cat("\n生成时间:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+cat("R版本:", R.version.string, "\n")
+```

@@ -1,0 +1,862 @@
+---
+title: "Survival Analysis - Homework 1"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: true
+    number_sections: true
+    fig_width: 10
+    fig_height: 6
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+    theme: united
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, 
+                      fig.width = 10, fig.height = 6, fig.align = "center")
+```
+
+# Setup
+
+## Load Required Packages
+
+```{r load-packages}
+# Install packages if needed
+# install.packages("survival")
+
+# Load packages
+library(survival)
+library(knitr)
+```
+
+---
+
+# Question 1: Exponential Distribution Analysis
+
+## Background
+
+The following data consists of the times to relapse and times to death of 10 bone marrow transplant patients, who were followed for up to 45 months after their transplant.
+
+- Patients #7-10 were alive and free of relapse at the end of the study
+- Patients #4-6 relapsed, but were still alive at the end of the study
+
+## Data
+
+```{r q1-load-data}
+# Read data
+q1_data <- read.csv("Q1data_extracted.csv")
+kable(q1_data, caption = "Table 1: Bone Marrow Transplant Patient Data", align = "c")
+```
+
+**Data Summary:**
+
+- Total patients: `r nrow(q1_data)`
+- Relapse events: `r sum(q1_data$Relapse)` patients, Censored: `r sum(1 - q1_data$Relapse)` patients
+- Death events: `r sum(q1_data$Death)` patients, Censored: `r sum(1 - q1_data$Death)` patients
+
+---
+
+## Question 1(a): Maximum Likelihood Estimation of λ
+
+**Task:** Calculate the maximum likelihood estimator of the parameter λ for time to relapse AND time to death assuming an exponential distribution, f(t) = λe^(-λt). Write a brief sentence interpreting this parameter.
+
+### Solution
+
+#### Part 1: Time to Relapse
+
+**Step 1: Extract the observed data**
+
+From the dataset, we identify relapse events:
+- Patient 1: Relapse at 5 months (event)
+- Patient 2: Relapse at 8 months (event)
+- Patient 3: Relapse at 12 months (event)
+- Patient 4: Relapse at 20 months (event)
+- Patient 5: Relapse at 32 months (event)
+- Patient 6: Relapse at 27 months (event)
+- Patients 7-10: Censored at 16, 17, 19, 30 months (no relapse)
+
+**Step 2: Exponential Distribution Framework**
+
+For exponential distribution, the probability density function is:
+$$f(t) = \lambda e^{-\lambda t}, \quad t \geq 0$$
+
+The survival function is:
+$$S(t) = P(T > t) = e^{-\lambda t}$$
+
+The hazard function is constant:
+$$h(t) = \lambda$$
+
+**Step 3: Maximum Likelihood Estimation**
+
+According to the chapter1, page 71, the estimator for $\lambda$ is:
+$$\hat{\lambda} = \frac{d}{\sum_{i=1}^{n} t_i} = \frac{\text{Number of events}}{\text{Persontime: total number of time units observed on all individuals}}$$
+
+**Step 4: Calculate λ by hand**
+
+Number of relapse events: $d = 6$
+
+Total exposure time:
+$$\sum_{i=1}^{10} t_i = 5 + 8 + 12 + 20 + 32 + 27 + 16 + 17 + 19 + 30 = 186 \text{ months}$$
+
+Maximum likelihood estimate:
+$$\hat{\lambda} = \frac{6}{186} = 0.032258 \text{ per month}$$
+
+**Step 5: Derived Parameters**
+
+Mean survival time:
+$$E(T) = \frac{1}{\lambda} = \frac{1}{0.032258} = 31.00 \text{ months}$$
+
+Median survival time:
+$$\text{Median} = \frac{\log(2)}{\lambda} = \frac{0.6931}{0.032258} = 21.48 \text{ months}$$
+
+**Step 6: Confidence Interval for λ (Poisson Approximation)**
+
+Using the Poisson approximation for the number of events, the standard error of $\hat{\lambda}$ is:
+$$\text{SE}(\hat{\lambda}) = \frac{\sqrt{d}}{T} = \frac{\sqrt{d}}{\sum_{i=1}^{n} t_i}$$
+
+where $d = 6$ (number of events) and $T = 186$ (total person-time).
+
+Calculate standard error:
+$$\text{SE}(\hat{\lambda}) = \frac{\sqrt{6}}{186} = \frac{2.449}{186} = 0.01317$$
+
+For a 95% confidence interval, using $z_{0.975} = 1.96$:
+$$\hat{\lambda} \pm z_{1-\alpha/2} \cdot \text{SE}(\hat{\lambda})$$
+
+$$0.032258 \pm 1.96 \times 0.01317$$
+
+$$0.032258 \pm 0.0258$$
+
+$$= (0.0065, 0.0581)$$
+
+**95% CI for λ:** $(0.0065, 0.0581)$ per month
+
+**Step 7: Survival Probabilities**
+
+Using $S(t) = e^{-\lambda t}$ with $\hat{\lambda} = 0.032258$:
+
+| Time (months) | Calculation | S(t) |
+|:-------------:|:-----------:|:----:|
+| 5 | $e^{-0.032258 \times 5}$ | 0.8513 |
+| 10 | $e^{-0.032258 \times 10}$ | 0.7247 |
+| 15 | $e^{-0.032258 \times 15}$ | 0.6170 |
+| 20 | $e^{-0.032258 \times 20}$ | 0.5253 |
+| 25 | $e^{-0.032258 \times 25}$ | 0.4472 |
+| 30 | $e^{-0.032258 \times 30}$ | 0.3806 |
+
+**Summary of Hand Calculations:**
+- **Estimated hazard rate:** $\hat{\lambda}_R = 0.032$ per month (rounded to 3 decimal places)
+- **Standard error:** $\text{SE}(\hat{\lambda}) = 0.0132$ per month
+- **95% CI for λ:** $(0.0065, 0.0581)$ per month
+- **Mean time to relapse:** $31.00$ months
+- **Median time to relapse:** $21.48$ months
+
+**Interpretation:** The parameter λ represents the instantaneous hazard rate (risk) of relapse per month. A value of 0.032 per month indicates that at any given time, a patient has approximately a 3.2% risk of relapse per month, assuming the exponential distribution holds.
+
+---
+
+#### Part 2: Time to Death
+
+**Step 1: Extract death data**
+
+From the dataset, we identify death events:
+- Patient 1: Death at 8 months (event)
+- Patient 2: Death at 12 months (event)
+- Patient 3: Death at 15 months (event)
+- Patients 4-10: Censored at 33, 45, 28, 16, 17, 19, 30 months (no death observed)
+
+**Step 2: Calculate λ for death**
+
+Number of death events: $d = 3$
+
+Total exposure time:
+$$\sum_{i=1}^{10} t_i = 8 + 12 + 15 + 33 + 45 + 28 + 16 + 17 + 19 + 30 = 223 \text{ months}$$
+
+Maximum likelihood estimate:
+$$\hat{\lambda}_D = \frac{3}{223} = 0.013453 \approx 0.013 \text{ per month (rounded to 3 decimal places)}$$
+
+**Step 3: Derived Parameters for Death**
+
+Mean survival time:
+$$E(T) = \frac{1}{\lambda} = \frac{1}{0.013453} = 74.33 \text{ months}$$
+
+Median survival time:
+$$\text{Median} = \frac{\log(2)}{\lambda} = \frac{0.6931}{0.013453} = 51.52 \text{ months}$$
+
+**Step 4: Confidence Interval for λ_D (Poisson Approximation)**
+
+Using the Poisson approximation, the standard error of $\hat{\lambda}_D$ is:
+$$\text{SE}(\hat{\lambda}_D) = \frac{\sqrt{d}}{T} = \frac{\sqrt{3}}{223} = \frac{1.732}{223} = 0.00777$$
+
+For a 95% confidence interval, using $z_{0.975} = 1.96$:
+$$\hat{\lambda}_D \pm z_{1-\alpha/2} \cdot \text{SE}(\hat{\lambda}_D)$$
+
+$$0.013453 \pm 1.96 \times 0.00777$$
+
+$$0.013453 \pm 0.01523$$
+
+$$= (-0.0018, 0.0287)$$
+
+Since the hazard rate cannot be negative, we adjust the lower bound to 0:
+
+$$\text{95% CI for } \lambda_D: (0.0000, 0.0287) \text{ per month}$$
+
+Note: The negative lower bound indicates insufficient events for precise estimation. Alternatively, we can report $(0.0000, 0.0287)$ or note the limitation.
+
+**Summary for Death:**
+- **Estimated hazard rate:** $\hat{\lambda}_D = 0.013$ per month (rounded to 3 decimal places)
+- **Standard error:** $\text{SE}(\hat{\lambda}_D) = 0.0078$ per month
+- **95% CI for λ:** $(0.0000, 0.0287)$ per month
+- **Mean time to death:** $74.33$ months
+- **Median time to death:** $51.52$ months
+
+**Interpretation:** The parameter λ for death represents the instantaneous hazard rate of death per month. A value of 0.013 per month indicates a lower risk of death compared to relapse (0.032 per month).
+
+---
+
+## Question 1(b): Using the Exponential Parameter
+
+**Task:** Using the parameter estimate from 1(a) (rounded to 3 decimal places), estimate the following quantities for BOTH relapse and death.
+
+### Solution
+
+```{r q1b-calculations}
+lambda_R <- 0.032  # per month (relapse)
+lambda_D <- 0.013  # per month (death)
+
+# Calculate all quantities
+mean_relapse <- 1 / lambda_R
+mean_death <- 1 / lambda_D
+median_relapse <- log(2) / lambda_R
+median_death <- log(2) / lambda_D
+SR_12 <- exp(-lambda_R * 12)
+SR_24 <- exp(-lambda_R * 24)
+SD_12 <- exp(-lambda_D * 12)
+SD_24 <- exp(-lambda_D * 24)
+FR_12 <- 1 - SR_12
+FR_24 <- 1 - SR_24
+FD_12 <- 1 - SD_12
+FD_24 <- 1 - SD_24
+conditional_prob <- SR_24 / SR_12
+```
+
+### Summary Table
+
+```{r q1b-summary-table}
+kable(data.frame(
+  Quantity = c("(i) Mean", "(ii) Median", "(iii) S(12 mo)", "(iii) S(24 mo)", 
+               "(iv) F(12 mo)", "(iv) F(24 mo)", "(v) P(T>24|T>12)"),
+  Relapse = c(
+    paste(round(mean_relapse, 2), "mo"),
+    paste(round(median_relapse, 2), "mo"),
+    round(SR_12, 4), round(SR_24, 4), round(FR_12, 4), round(FR_24, 4),
+    round(conditional_prob, 4)),
+  Death = c(
+    paste(round(mean_death, 2), "mo"),
+    paste(round(median_death, 2), "mo"),
+    round(SD_12, 4), round(SD_24, 4), round(FD_12, 4), round(FD_24, 4), "—")
+), caption = "Table 2: Exponential Distribution Estimates", align = "lcc",
+col.names = c("Quantity", "Time to Relapse", "Time to Death"))
+```
+
+**Note:** The conditional probability P(T > 24 | T > 12) = `r round(conditional_prob, 4)` equals S(12) = `r round(SR_12, 4)`, demonstrating the memoryless property of the exponential distribution.
+
+---
+
+## Question 1(c): Non-parametric Median Estimation
+
+**Task:** If we decide that an exponential distribution is not appropriate and want to estimate the survival distribution non-parametrically, is it possible to estimate the median time to relapse? Is it possible to estimate the median time to death? If so, provide the appropriate estimates.
+
+### Solution
+
+```{r q1c-km-median}
+library(survival)
+
+# Relapse and Death KM estimates
+surv_obj_relapse <- Surv(time = q1_data$Relapse_Time, event = q1_data$Relapse)
+km_relapse <- survfit(surv_obj_relapse ~ 1)
+median_relapse_km <- quantile(km_relapse, probs = 0.5)$quantile
+
+surv_obj_death <- Surv(time = q1_data$Death_Time, event = q1_data$Death)
+km_death <- survfit(surv_obj_death ~ 1)
+median_death_km <- quantile(km_death, probs = 0.5)$quantile
+
+# Summary table
+kable(data.frame(
+  Event = c("Relapse", "Death"),
+  KM_Median = c(
+    ifelse(is.na(median_relapse_km), "Not estimable", round(median_relapse_km, 2)),
+    ifelse(is.na(median_death_km), "Not estimable", round(median_death_km, 2))
+  ),
+  Exponential_Median = c(round(median_relapse, 2), round(median_death, 2))
+), caption = "Table 3: Non-parametric (KM) vs Parametric (Exponential) Median Estimates", align = "lcc")
+```
+
+**Answer:** 
+- **Relapse median** is estimable: `r ifelse(is.na(median_relapse_km), "Not estimable", paste(round(median_relapse_km, 2), "months"))`
+- **Death median** is not estimable because S(t) never drops below 50% due to heavy censoring
+
+---
+
+## Question 1(d): Exponential Model Goodness of Fit
+
+**Task:** Assess whether the exponential distribution is appropriate for the relapse data.
+
+### Solution
+
+```{r q1d-goodness-of-fit, fig.width=10, fig.height=5}
+lambda_R <- 0.032  # from 1(a)
+surv_obj_relapse <- Surv(time = q1_data$Relapse_Time, event = q1_data$Relapse)
+km_fit_relapse <- survfit(surv_obj_relapse ~ 1)
+
+par(mfrow = c(1, 2))
+
+# Plot 1: KM vs Exponential
+plot(km_fit_relapse, conf.int = TRUE,
+     xlab = "Time (months)", ylab = "Survival Probability",
+     main = "KM vs. Exponential Model", col = "black", lwd = 2)
+time_grid <- seq(0, max(q1_data$Relapse_Time), length.out = 200)
+lines(time_grid, exp(-lambda_R * time_grid), col = "red", lwd = 2, lty = 2)
+legend("topright", legend = c("KM (observed)", "Exponential"),
+       col = c("black", "red"), lty = c(1, 2), lwd = 2, bty = "n")
+
+# Plot 2: Linearity check
+km_times <- km_fit_relapse$time
+km_surv <- km_fit_relapse$surv
+valid_idx <- km_surv > 0 & km_surv < 1
+plot(km_times[valid_idx], -log(km_surv[valid_idx]),
+     pch = 16, col = "blue", xlab = "Time (months)", ylab = "-log(S(t))",
+     main = "Exponential Check: -log(S(t)) vs Time")
+abline(a = 0, b = lambda_R, col = "red", lwd = 2, lty = 2)
+legend("topleft", legend = c("KM", "Expected (slope = λ)"),
+       col = c("blue", "red"), pch = c(16, NA), lty = c(NA, 2), bty = "n")
+
+par(mfrow = c(1, 1))
+```
+
+**Assessment:** The exponential model appears reasonable if: (1) KM and exponential curves are similar, (2) -log(S(t)) vs. time is approximately linear. Based on these plots, the exponential assumption can be evaluated.
+- **Small sample caveat**: With only 6 events, the power to detect departures from exponential is limited
+
+---
+
+# Question 2: Survival Data Analysis
+
+## Data
+
+```{r q2-load-data}
+# Read data
+q2_data <- read.csv("Q2data_extracted.csv")
+kable(q2_data, caption = "Table 3: Question 2 Data", align = "c")
+```
+
+**Data Summary:**
+
+```{r q2-summary}
+cat("Total sample size:", nrow(q2_data), 
+    "| Events:", sum(q2_data$Binary), 
+    "| Censored:", sum(1 - q2_data$Binary), 
+    "| Event rate:", sprintf("%.1f%%", 100 * sum(q2_data$Binary) / nrow(q2_data)), "\n")
+```
+
+---
+
+## Question 2(a): Kaplan-Meier Estimate - Hand Calculation
+
+### Solution
+
+**Step 1: Order the data by time**
+
+From the dataset, we first order all times (both events and censored):
+- Events (Binary=1): 2, 3, 4, 12, 22, 48, 80, 80, 90, 160, 161, 180
+- Censored (Binary=0): 51, 56, 94, 180
+
+Combined ordered times: 2, 3, 4, 12, 22, 48, 51†, 56†, 80, 80, 90, 94†, 160, 161, 180, 180†
+
+(where † indicates censored observations)
+
+**Step 2: Kaplan-Meier Formula**
+
+The Kaplan-Meier estimator is:
+$$\hat{S}(t) = \prod_{t_i \leq t} \left(1 - \frac{d_i}{n_i}\right)$$
+
+where:
+- $d_i$ = number of events at time $t_i$
+- $n_i$ = number at risk just before time $t_i$
+
+**Step 3: Construct the KM table by hand**
+
+| Time | At Risk ($n_i$) | Events ($d_i$) | Censored | $1 - \frac{d_i}{n_i}$ | $\hat{S}(t)$ |
+|:----:|:---------------:|:--------------:|:--------:|:---------------------:|:------------:|
+| 0    | 17              | 0              | 0        | 1.0000                | 1.0000       |
+| 2    | 17              | 1              | 0        | 16/17 = 0.9412        | 0.9412       |
+| 3    | 16              | 1              | 0        | 15/16 = 0.9375        | 0.9412 × 0.9375 = 0.8824 |
+| 4    | 15              | 1              | 0        | 14/15 = 0.9333        | 0.8824 × 0.9333 = 0.8235 |
+| 12   | 14              | 1              | 0        | 13/14 = 0.9286        | 0.8235 × 0.9286 = 0.7647 |
+| 22   | 13              | 1              | 0        | 12/13 = 0.9231        | 0.7647 × 0.9231 = 0.7059 |
+| 48   | 12              | 1              | 0        | 11/12 = 0.9167        | 0.7059 × 0.9167 = 0.6471 |
+| 51†  | 11              | 0              | 1        | 1.0000                | 0.6471       |
+| 56†  | 10              | 0              | 1        | 1.0000                | 0.6471       |
+| 80   | 9               | 2              | 0        | 7/9 = 0.7778          | 0.6471 × 0.7778 = 0.5033 |
+| 90   | 7               | 1              | 0        | 6/7 = 0.8571          | 0.5033 × 0.8571 = 0.4314 |
+| 94†  | 6               | 0              | 1        | 1.0000                | 0.4314       |
+| 160  | 5               | 1              | 0        | 4/5 = 0.8000          | 0.4314 × 0.8000 = 0.3451 |
+| 161  | 4               | 1              | 0        | 3/4 = 0.7500          | 0.3451 × 0.7500 = 0.2588 |
+| 180  | 3               | 1              | 0        | 2/3 = 0.6667          | 0.2588 × 0.6667 = 0.1725 |
+| 180† | 2               | 0              | 1        | 1.0000                | 0.1725       |
+
+**Step 4: Key calculations explained**
+
+At each event time $t_i$, we calculate:
+1. **At risk**: Count all individuals who have not yet had an event or been censored before $t_i$
+2. **Events**: Count number of events at exactly time $t_i$
+3. **Survival probability**: Multiply previous $\hat{S}(t)$ by $(1 - d_i/n_i)$
+
+**Example at t=80:**
+- At risk: $n_i = 9$ (after removing 2 censored at 51 and 56)
+- Events: $d_i = 2$ (two events occur at time 80)
+- Factor: $1 - 2/9 = 7/9 = 0.7778$
+- Survival: $\hat{S}(80) = 0.6471 \times 0.7778 = 0.5033$
+
+**Step 5: Summary statistics**
+
+From the hand-calculated KM table:
+- **Survival at key times:**
+  - $\hat{S}(50) = 0.6471$
+  - $\hat{S}(100) = 0.4314$
+  - $\hat{S}(180) = 0.1725$
+
+- **Median survival time:** The time when $\hat{S}(t)$ first drops below 0.5
+  - At t=80: $\hat{S}(80) = 0.5033$ (still above 0.5)
+  - At t=90: $\hat{S}(90) = 0.4314$ (below 0.5)
+  - **Median ≈ 85** (interpolated between 80 and 90)
+
+- **Number of events:** 12 out of 17
+- **Censoring rate:** 4/17 = 23.5%
+
+**Step 6: Confidence intervals (formula)**
+
+The Greenwood formula for variance:
+$$\text{Var}[\hat{S}(t)] = [\hat{S}(t)]^2 \sum_{t_i \leq t} \frac{d_i}{n_i(n_i - d_i)}$$
+
+95% CI (on log scale):
+$$\exp\left[\log(\hat{S}(t)) \pm 1.96 \times \frac{\text{SE}[\hat{S}(t)]}{\hat{S}(t)}\right]$$
+
+**Hand calculation example at t=90:**
+$$\text{Var}[\hat{S}(90)] = (0.4314)^2 \times \left[\frac{1}{17 \times 16} + \frac{1}{16 \times 15} + \cdots + \frac{1}{7 \times 6}\right]$$
+
+This requires summing all terms, which gives approximately:
+$$\text{SE}[\hat{S}(90)] \approx 0.130$$
+
+95% CI for S(90): approximately (0.21, 0.65)
+
+---
+
+## Question 2(b): R Code Verification with Confidence Intervals
+
+**Task:** Repeat the estimation of Ŝ(t) using software. Calculate pointwise 95% confidence intervals using both the "log-log" approach and the linear approach.
+
+### Solution
+
+```{r q2b-km-ci-comparison}
+# Create survival object
+surv_q2 <- Surv(time = q2_data$Value, event = q2_data$Binary)
+
+# Fit Kaplan-Meier with different CI types
+km_q2_loglog <- survfit(surv_q2 ~ 1, conf.type = "log-log")
+km_q2_plain <- survfit(surv_q2 ~ 1, conf.type = "plain")
+
+# Summary and comparison
+km_summary_loglog <- summary(km_q2_loglog)
+km_summary_plain <- summary(km_q2_plain)
+
+ci_comparison <- data.frame(
+  Time = km_summary_loglog$time,
+  `At Risk` = km_summary_loglog$n.risk,
+  Events = km_summary_loglog$n.event,
+  `S(t)` = round(km_summary_loglog$surv, 4),
+  `Log-Log Lower` = round(km_summary_loglog$lower, 4),
+  `Log-Log Upper` = round(km_summary_loglog$upper, 4),
+  `Linear Lower` = round(km_summary_plain$lower, 4),
+  `Linear Upper` = round(km_summary_plain$upper, 4),
+  check.names = FALSE
+)
+
+kable(ci_comparison, 
+      caption = "Table 4: KM Estimates with Log-Log and Linear 95% CI",
+      align = "c")
+
+# Check bounds
+plain_outof_bounds <- any(km_summary_plain$lower < 0 | km_summary_plain$upper > 1, na.rm = TRUE)
+
+cat("\nCI Bounds Check:\n")
+cat("  Log-Log CI: All within [0,1] ✓\n")
+if (plain_outof_bounds) {
+  cat("  Linear CI: Has bounds outside [0,1] ⚠\n")
+} else {
+  cat("  Linear CI: All within [0,1] ✓\n")
+}
+```
+
+---
+
+## Question 2(c): Plot Survival Function with Confidence Intervals
+
+**Task:** Plot the estimated survival function Ŝ(t) and pointwise 95% confidence intervals.
+
+### Solution
+
+```{r q2c-km-plot, fig.width=10, fig.height=5}
+par(mfrow = c(1, 2))
+plot(km_q2_loglog, xlab = "Time (days)", ylab = "Survival Probability",
+     main = "KM with Log-Log CI", conf.int = TRUE, lwd = 2, col = "darkblue")
+legend("topright", legend = c("KM", "95% CI"), col = c("darkblue", "lightblue"), 
+       lty = 1, lwd = c(2, 8), bty = "n")
+
+plot(km_q2_plain, xlab = "Time (days)", ylab = "Survival Probability",
+     main = "KM with Linear CI", conf.int = TRUE, lwd = 2, col = "darkgreen")
+legend("topright", legend = c("KM", "95% CI"), col = c("darkgreen", "lightgreen"), 
+       lty = 1, lwd = c(2, 8), bty = "n")
+par(mfrow = c(1, 1))
+```
+
+---
+
+## Question 2(d): Median and Percentiles
+
+**Task:** Provide the estimated median survival, along with the estimated 25th and 75th percentiles (when possible). Indicate where these percentiles fall on the KM plot. What are the actual KM survival estimates corresponding to each of these estimated percentiles?
+
+### Solution
+
+```{r q2d-percentiles}
+quantiles_km <- quantile(km_q2_loglog, probs = c(0.25, 0.5, 0.75))
+q25 <- quantiles_km$quantile[1]
+median_km <- quantiles_km$quantile[2]
+q75 <- quantiles_km$quantile[3]
+
+kable(data.frame(
+  Percentile = c("25th (Q1)", "50th (Median)", "75th (Q3)"),
+  Time_days = c(q25, median_km, q75),
+  Survival_Prob = c(0.75, 0.50, 0.25)
+), caption = "Table 4: Survival Time Percentiles from KM Estimate", align = "lcc")
+```
+
+```{r q2d-plot-percentiles, fig.cap="Figure 2: KM Curve with Percentile Indicators"}
+plot(km_q2_loglog, xlab = "Time (days)", ylab = "Survival Probability",
+     main = "KM Survival with Percentiles", conf.int = TRUE, lwd = 2, col = "darkblue")
+abline(h = c(0.75, 0.5, 0.25), col = c("green", "red", "purple"), lty = 2, lwd = 1.5)
+if (!is.na(q75)) abline(v = q75, col = "purple", lty = 2)
+if (!is.na(median_km)) abline(v = median_km, col = "red", lty = 2)
+if (!is.na(q25)) abline(v = q25, col = "green", lty = 2)
+legend("topright", legend = c("KM", "Q1", "Median", "Q3"),
+       col = c("darkblue", "green", "red", "purple"), lty = c(1, 2, 2, 2), bty = "n")
+```
+
+---
+
+## Question 2(e): Cumulative Hazard from KM
+
+**Task:** Calculate the estimated cumulative hazard rate Λ̂(t) at each time t using the Kaplan-Meier survival estimate as the basis.
+
+### Solution
+
+```{r q2e-cumulative-hazard-km}
+km_sum <- summary(km_q2_loglog)
+cumulative_hazard_km <- -log(km_sum$surv)
+
+kable(data.frame(
+  Time = km_sum$time,
+  `S(t)` = round(km_sum$surv, 4),
+  `Λ(t) = -log(S(t))` = round(cumulative_hazard_km, 4),
+  check.names = FALSE
+), caption = "Table 5: Cumulative Hazard from KM", align = "c")
+```
+
+---
+
+## Question 2(f): Nelson-Aalen Estimator
+
+**Task:** Calculate the estimated cumulative hazard Λ̂(t) using the Nelson-Aalen estimator.
+
+### Solution
+
+```{r q2f-nelson-aalen}
+surv_q2 <- Surv(time = q2_data$Value, event = q2_data$Binary)
+km_sum <- summary(survfit(surv_q2 ~ 1))
+nelson_aalen <- cumsum(km_sum$n.event / km_sum$n.risk)
+
+kable(data.frame(
+  Time = km_sum$time,
+  `n_risk` = km_sum$n.risk,
+  `events` = km_sum$n.event,
+  `Λ_NA(t)` = round(nelson_aalen, 4),
+  `Λ_KM(t)` = round(-log(km_sum$surv), 4),
+  check.names = FALSE
+), caption = "Table 6: Nelson-Aalen vs. KM-based Cumulative Hazard", align = "c")
+```
+
+---
+
+## Question 2(g): Cumulative Hazard Plots for Model Assessment
+
+**Task:** Plot (i) Λ̂(t) vs t and (ii) log Λ̂(t) vs log(t) and use these plots to comment on the appropriateness of the Exponential and Weibull models.
+
+### Solution
+
+```{r q2g-hazard-plots, fig.width=12, fig.height=5}
+par(mfrow = c(1, 2))
+
+# Plot 1: Λ(t) vs t (Exponential check)
+plot(km_sum$time, nelson_aalen, type = "s", lwd = 2, col = "darkblue",
+     xlab = "Time (days)", ylab = "Cumulative Hazard Λ(t)", main = "Λ(t) vs t")
+abline(a = 0, b = mean(nelson_aalen / km_sum$time, na.rm = TRUE), col = "red", lty = 2, lwd = 2)
+legend("topleft", legend = c("Nelson-Aalen", "Linear (Exponential)"),
+       col = c("darkblue", "red"), lty = c(1, 2), lwd = 2, bty = "n")
+
+# Plot 2: log Λ(t) vs log(t) (Weibull check)
+valid_idx <- nelson_aalen > 0 & km_sum$time > 0
+plot(log(km_sum$time[valid_idx]), log(nelson_aalen[valid_idx]),
+     pch = 16, col = "darkgreen", cex = 1.2,
+     xlab = "log(Time)", ylab = "log(Λ(t))", main = "log Λ(t) vs log(t)")
+lm_fit <- lm(log(nelson_aalen[valid_idx]) ~ log(km_sum$time[valid_idx]))
+abline(lm_fit, col = "red", lwd = 2, lty = 2)
+slope <- round(coef(lm_fit)[2], 2)
+legend("topleft", legend = c(paste("Weibull shape α ≈", slope)), col = "red", lty = 2, bty = "n")
+
+par(mfrow = c(1, 1))
+```
+
+**Interpretation:**
+- **Exponential**: Appropriate if Λ(t) vs. t is linear through origin
+- **Weibull**: Appropriate if log Λ(t) vs. log(t) is linear; slope ≈ shape parameter α (α≈`r round(slope, 2)`)
+  - α=1: Exponential; α<1: Decreasing hazard; α>1: Increasing hazard
+
+---
+
+## Question 2(h): Fleming-Harrington Estimator
+
+**Task:** Using the results from part (f), calculate the alternative Fleming-Harrington estimator of the survival function Ŝ_FH(t) and comment on its agreement with the Kaplan-Meier estimate.
+
+### Solution
+
+```{r q2h-fleming-harrington, fig.width=8, fig.height=5}
+S_FH <- exp(-nelson_aalen)
+S_KM <- km_sum$surv
+
+kable(data.frame(
+  Time = km_sum$time,
+  `Ŝ_FH(t)` = round(S_FH, 4),
+  `Ŝ_KM(t)` = round(S_KM, 4),
+  `Diff` = round(S_FH - S_KM, 4),
+  check.names = FALSE
+), caption = "Table 7: Fleming-Harrington vs. KM Estimates", align = "c")
+
+plot(km_sum$time, S_KM, type = "s", lwd = 3, col = "blue",
+     xlab = "Time (days)", ylab = "Survival Probability",
+     main = "Fleming-Harrington vs. Kaplan-Meier", ylim = c(0, 1))
+lines(km_sum$time, S_FH, type = "s", lwd = 2, col = "red", lty = 2)
+legend("topright", legend = c("KM", "FH"), col = c("blue", "red"), 
+       lty = c(1, 2), lwd = c(3, 2), bty = "n")
+```
+
+**Comment:** The two estimators show excellent agreement (max difference ≈ `r round(max(abs(S_FH - S_KM)), 4)`), which is expected for well-behaved survival data.
+
+---
+
+# Question 3: Lifetable (Actuarial) Survival Estimate
+
+**Task:** Group the data from Question 2 into approximate 1-month intervals (30-day intervals: 0-30, 30-60, 60-90, etc.)
+
+## Question 3(a): Actuarial Estimate
+
+**Task:** Using the grouped data, calculate the actuarial estimate of the survival function.
+
+### Solution
+
+```{r q3a-lifetable}
+# Create intervals
+q2_data$interval <- cut(q2_data$Value, 
+                         breaks = seq(0, 270, by = 30),
+                         right = FALSE,
+                         labels = paste0(seq(0, 240, by = 30), "-", seq(30, 270, by = 30)))
+
+# Calculate life table manually
+intervals <- seq(0, 240, by = 30)
+n_intervals <- length(intervals)
+
+lifetable <- data.frame(
+  Interval = character(),
+  n_start = numeric(),
+  Events = numeric(),
+  Censored = numeric(),
+  n_effective = numeric(),
+  q_j = numeric(),
+  p_j = numeric(),
+  S_j = numeric()
+)
+
+n_at_start <- nrow(q2_data)
+S_prev <- 1.0
+
+for (i in 1:n_intervals) {
+  interval_start <- intervals[i]
+  interval_end <- intervals[i] + 30
+  
+  # Data in this interval
+  in_interval <- q2_data$Value >= interval_start & q2_data$Value < interval_end
+  d_j <- sum(q2_data$Binary[in_interval] == 1, na.rm = TRUE)  # Events
+  c_j <- sum(q2_data$Binary[in_interval] == 0, na.rm = TRUE)  # Censored
+  
+  # Effective number at risk: n_j - c_j/2
+  n_eff <- n_at_start - c_j/2
+  
+  # Conditional probability of event
+  q_j <- ifelse(n_eff > 0, d_j / n_eff, 0)
+  p_j <- 1 - q_j
+  
+  # Cumulative survival
+  S_j <- S_prev * p_j
+  
+  lifetable <- rbind(lifetable, data.frame(
+    Interval = paste0(interval_start, "-", interval_end),
+    n_start = n_at_start,
+    Events = d_j,
+    Censored = c_j,
+    n_effective = round(n_eff, 1),
+    q_j = round(q_j, 4),
+    p_j = round(p_j, 4),
+    S_j = round(S_j, 4)
+  ))
+  
+  # Update for next interval
+  n_at_start <- n_at_start - d_j - c_j
+  S_prev <- S_j
+  
+  if (n_at_start <= 0) break
+}
+
+kable(lifetable, 
+      caption = "Table 8: Life Table for CD4 Response Data (30-day intervals)",
+      align = "c",
+      col.names = c("Interval", "n at start", "Events (d)", "Censored (c)", 
+                    "n' = n - c/2", "q_j", "p_j = 1-q_j", "S(t)"))
+```
+
+---
+
+## Question 3(b): Hazard Function
+
+**Task:** Calculate the estimated hazard function at the midpoint of each time interval and plot.
+
+### Solution
+
+```{r q3b-hazard-function, fig.width=8, fig.height=5}
+delta_t <- 30
+lifetable$h_j <- lifetable$q_j / (delta_t * lifetable$p_j)
+lifetable$midpoint <- intervals[1:nrow(lifetable)] + 15
+
+# Filter out Inf/NaN values for display
+valid_rows <- !is.infinite(lifetable$h_j) & !is.na(lifetable$h_j)
+
+kable(lifetable[valid_rows, c("Interval", "midpoint", "h_j")], 
+      caption = "Table 9: Estimated Hazard Rates", align = "c",
+      col.names = c("Interval", "Midpoint (days)", "h(t) per day"), digits = 6)
+
+plot(lifetable$midpoint[valid_rows], lifetable$h_j[valid_rows], 
+     type = "b", pch = 16, col = "darkred", lwd = 2,
+     xlab = "Time (days)", ylab = "Hazard Rate per day", main = "Estimated Hazard Function")
+abline(h = mean(lifetable$h_j[valid_rows], na.rm = TRUE), col = "blue", lty = 2, lwd = 2)
+legend("topright", legend = c("Hazard", "Mean"), col = c("darkred", "blue"), 
+       lty = c(1, 2), pch = c(16, NA), bty = "n")
+```
+
+---
+
+## Question 3(c): Model Appropriateness
+
+**Task:** What can you say about the hazard for treatment response over time? Does an exponential model seem appropriate for this data?
+
+### Solution
+
+```{r q3c-assessment}
+# Filter out Inf/NaN values
+valid_hazards <- lifetable$h_j[!is.infinite(lifetable$h_j) & !is.na(lifetable$h_j)]
+
+if (length(valid_hazards) > 0) {
+  hazard_mean <- mean(valid_hazards)
+  hazard_sd <- sd(valid_hazards)
+  cv <- hazard_sd / hazard_mean
+  
+  cat("Hazard Statistics (valid intervals only):\n")
+  cat("  Mean:", round(hazard_mean, 6), "per day\n")
+  cat("  Std Dev:", round(hazard_sd, 6), "\n")
+  cat("  Coefficient of Variation:", round(cv, 2), "\n")
+  cat("  Valid intervals:", length(valid_hazards), "out of", nrow(lifetable), "\n\n")
+  
+  cat("Exponential Model Assessment:\n")
+  if (cv < 0.5) {
+    cat("  Hazard is relatively constant → Exponential model MAY be appropriate\n")
+  } else {
+    cat("  Hazard varies substantially (CV =", round(cv, 2), ") → Exponential model may NOT be appropriate\n")
+  }
+} else {
+  cat("Unable to assess: No valid hazard values (all are Inf or NaN)\n")
+  cat("This suggests very small sample sizes in later intervals.\n")
+}
+```
+
+---
+
+# Question 4: Kidney Transplant Study Analysis
+
+**Reference:** Roberts, J.P., et al. (2004). "Effect of Changing the Priority for HLA Matching on the Rates and Outcomes of Kidney Transplantation in Minority Groups." *New England Journal of Medicine*, 350:545-551.
+
+## Analysis of Censoring Mechanisms
+
+### 1. Definition of T₁
+
+**T₁** is defined as the time from being placed on the waiting list to receiving a liver transplant.
+
+- **Starting Point:** The time when a patient is officially placed on the liver transplant waiting list.
+- **End Point:** The time when the patient receives a liver transplant.
+
+This time interval measures the duration a patient spends waiting for transplantation.
+
+### 2. Is the censoring mechanism for T₁ non-informative?
+
+**Censoring mechanism** refers to situations where we cannot observe the complete survival time because data are "censored" - for example, when patients die during the waiting period, withdraw from the waiting list, or have not received a transplant by the end of the study.
+
+**Non-informative censoring** means that the occurrence of censoring is independent of survival time and does not affect statistical estimation of survival outcomes.
+
+In this case:
+
+- If patients withdraw from the list for **non-health-related reasons** (such as relocation or choosing not to transplant), censoring may be non-informative.
+- However, if patients fail to receive a transplant due to **disease progression or death**, then censoring is **informative**, because it is closely related to survival time.
+
+**Conclusion:** For T₁, the censoring mechanism is **likely informative**, because patients may be unable to receive transplantation due to changes in their medical condition.
+
+### 3. Is the censoring mechanism for "time until at least one HLA-mismatched organ becomes available" non-informative?
+
+This analysis focuses on the waiting time until an organ with **at least one HLA mismatch** becomes available.
+
+- If patients die or withdraw from the waiting list during this period, we cannot observe this time point.
+- If this censoring is related to the patient's health status (e.g., disease progression preventing transplantation), then censoring is **informative**.
+
+**Conclusion:** For this waiting time, the censoring mechanism is also **likely informative**, because organ availability and patient health status may be correlated.
+
+---
+
+# Appendix
+
+## R Session Information
+
+```{r session-info}
+sessionInfo()
+```
+
+---
+
+**End of Report**
