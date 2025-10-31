@@ -1,0 +1,590 @@
+---
+title: "Survival Analysis - Homework 2"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Load Required Libraries
+
+```{r load-libraries}
+# Load necessary packages
+library(survival)
+library(survminer)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+```
+
+# Load Data
+
+```{r load-data}
+# Read the MI study dataset
+# Adjust the file path as needed
+mi_data <- read.table("MIstudy.dat", header = TRUE)
+
+# Display first few rows
+head(mi_data)
+
+# Check data structure
+str(mi_data)
+
+# Summary statistics
+summary(mi_data)
+```
+
+---
+
+# Question 1: Logrank and Score Tests for MI Study
+
+## Part (a): Kaplan-Meier Survival Curves
+
+**Task:** Produce a plot showing the estimated Kaplan-Meier survival functions for the endpoint of death comparing those who are obese or overweight (BMI≥25) vs normal weight (BMI<25). Report the percentage of overweight/obese patients and comment on the censoring pattern.
+
+```{r q1a-km-plot}
+# Create survival object
+surv_obj <- Surv(time = mi_data$dthtime, event = mi_data$dthstat)
+
+# Fit Kaplan-Meier curves by obese_ovwt group
+km_fit <- survfit(surv_obj ~ obese_ovwt, data = mi_data)
+
+# Print summary
+summary(km_fit)
+
+# Create KM plot
+ggsurvplot(
+  km_fit,
+  data = mi_data,
+  pval = FALSE,
+  conf.int = TRUE,
+  risk.table = TRUE,
+  xlab = "Time (months)",
+  ylab = "Survival Probability",
+  legend.title = "BMI Group",
+  legend.labs = c("Normal Weight (BMI<25)", "Overweight/Obese (BMI≥25)"),
+  title = "Kaplan-Meier Survival Curves by BMI Category"
+)
+
+# Calculate percentage of overweight/obese patients
+pct_overweight <- mean(mi_data$obese_ovwt) * 100
+cat("Percentage of overweight/obese patients:", round(pct_overweight, 2), "%\n")
+```
+
+**Answer:**
+
+* **Percentage overweight/obese:** [INSERT PERCENTAGE]% of the 500 patients are either overweight or obese (BMI≥25).
+
+* **Censoring pattern observation:** [DESCRIBE what you observe about the censoring pattern in the KM plot - e.g., are censoring times distributed throughout follow-up or concentrated at certain times? Are censoring rates similar between groups?]
+
+
+## Part (b): Logrank and Wilcoxon Tests
+
+**Task:** Calculate both a logrank test and Wilcoxon test. State which approach you used (CMH or linear rank test). Compare the test statistics.
+
+```{r q1b-tests}
+# Logrank test (using survdiff with rho=0)
+logrank_test <- survdiff(Surv(dthtime, dthstat) ~ obese_ovwt,
+                         data = mi_data,
+                         rho = 0)
+print("Logrank Test:")
+print(logrank_test)
+
+# Wilcoxon test (using survdiff with rho=1)
+wilcoxon_test <- survdiff(Surv(dthtime, dthstat) ~ obese_ovwt,
+                          data = mi_data,
+                          rho = 1)
+print("Wilcoxon Test:")
+print(wilcoxon_test)
+
+# Extract test statistics
+logrank_stat <- logrank_test$chisq
+wilcoxon_stat <- wilcoxon_test$chisq
+
+cat("\nLogrank test statistic:", round(logrank_stat, 4), "\n")
+cat("Wilcoxon test statistic:", round(wilcoxon_stat, 4), "\n")
+```
+
+**Answer:**
+
+* **Approach used:** [State whether you used CMH approach or linear rank test - in R, survdiff() uses the CMH approach]
+
+* **Test statistics comparison:**
+  - Logrank test statistic: [VALUE], p-value: [VALUE]
+  - Wilcoxon test statistic: [VALUE], p-value: [VALUE]
+  - [State which test yields larger test statistic]
+
+* **Prediction based on KM plot:** [Explain whether you could have predicted which test would be larger based on the KM curves in part (a). Consider: Does one group have consistently better/worse survival throughout follow-up (favors logrank), or are differences concentrated at early/late times (might favor Wilcoxon)?]
+
+
+## Part (c): Fleming-Harrington Tests
+
+**Task:** Calculate Fleming-Harrington test statistics for different combinations of p and q.
+
+```{r q1c-fh-tests}
+# Fleming-Harrington test with p=0, q=0 (equivalent to logrank)
+fh_00 <- survdiff(Surv(dthtime, dthstat) ~ obese_ovwt,
+                  data = mi_data,
+                  rho = 0)
+
+# Fleming-Harrington test with p=1, q=0 (equivalent to Wilcoxon)
+fh_10 <- survdiff(Surv(dthtime, dthstat) ~ obese_ovwt,
+                  data = mi_data,
+                  rho = 1)
+
+# Fleming-Harrington test with p=1, q=1
+# Note: survdiff doesn't directly support p=1, q=1
+# This requires custom implementation or specialized package
+# For demonstration, we'll note this limitation
+
+cat("Fleming-Harrington Test Results:\n")
+cat("i. p=0, q=0 (Logrank): Chi-square =", round(fh_00$chisq, 4),
+    ", p-value =", round(1 - pchisq(fh_00$chisq, 1), 4), "\n")
+cat("ii. p=1, q=0 (Wilcoxon): Chi-square =", round(fh_10$chisq, 4),
+    ", p-value =", round(1 - pchisq(fh_10$chisq, 1), 4), "\n")
+cat("iii. p=1, q=1: [Requires specialized implementation]\n")
+```
+
+**Answer:**
+
+* **Comparison to logrank and Wilcoxon:**
+  - FH(p=0, q=0): [VALUE] - this is identical to logrank test
+  - FH(p=1, q=0): [VALUE] - this is identical to Wilcoxon test
+  - FH(p=1, q=1): [VALUE]
+
+* **Power considerations:** [Discuss when each test would be expected to be more or less powerful than the logrank test. Consider:
+  - FH(0,0) = logrank: most powerful when hazards are proportional
+  - FH(1,0) = Wilcoxon: weights early failures more heavily
+  - FH(1,1): weights middle failures more heavily
+  - When would each be preferred based on the survival pattern?]
+
+
+## Part (d): Proportion Test
+
+**Task:** Test whether the proportions of deaths differ between groups, ignoring timing of death.
+
+```{r q1d-proportion-test}
+# Create 2x2 contingency table
+death_table <- table(mi_data$obese_ovwt, mi_data$dthstat)
+rownames(death_table) <- c("Normal Weight", "Overweight/Obese")
+colnames(death_table) <- c("Censored", "Dead")
+print("2x2 Contingency Table:")
+print(death_table)
+
+# Chi-square test or Fisher's exact test
+prop_test <- chisq.test(death_table)
+print(prop_test)
+
+# Alternatively, using logistic regression
+logistic_model <- glm(dthstat ~ obese_ovwt,
+                      data = mi_data,
+                      family = binomial)
+print(summary(logistic_model))
+
+# Extract p-value from logistic regression
+logistic_pval <- summary(logistic_model)$coefficients[2, 4]
+cat("\nLogistic regression p-value:", round(logistic_pval, 4), "\n")
+```
+
+**Answer:**
+
+* **Test results:**
+  - Chi-square/Fisher's test: Chi-square = [VALUE], p-value = [VALUE]
+  - OR logistic regression: Coefficient = [VALUE], p-value = [VALUE]
+
+* **Comparison to survival tests:** [Discuss whether this test yields similar conclusions to the tests in parts (b) and (c). Are the p-values and conclusions consistent?]
+
+* **When survival analysis is more powerful:** [Explain when you would expect survival analysis to be more powerful than simple proportion comparison. Consider:
+  - When there is substantial censoring
+  - When the timing of events matters
+  - When follow-up times vary considerably
+  - When hazards are non-proportional but differ in clinically meaningful ways]
+
+---
+
+# Question 2: Cox Model for Myocardial Infarction Study
+
+## Part (a): Unadjusted Cox Model
+
+**Task:** Fit an unadjusted Cox PH model with obese_ovwt as the only covariate using discrete option for ties. Report Wald, Score, and LR tests.
+
+```{r q2a-unadjusted-cox}
+# Fit unadjusted Cox model
+# Note: In R, use ties="discrete" or ties="exact" for discrete method
+cox_unadj <- coxph(Surv(dthtime, dthstat) ~ obese_ovwt,
+                   data = mi_data,
+                   ties = "breslow")  # Use "exact" for discrete method if available
+
+# Model summary
+summary(cox_unadj)
+
+# Extract test statistics
+cox_summary <- summary(cox_unadj)
+wald_stat <- cox_summary$waldtest[1]
+score_stat <- cox_summary$sctest[1]
+lr_stat <- cox_summary$logtest[1]
+
+cat("\nTest Statistics:\n")
+cat("Wald test: Chi-square =", round(wald_stat, 4),
+    ", p-value =", round(cox_summary$waldtest[3], 4), "\n")
+cat("Score test: Chi-square =", round(score_stat, 4),
+    ", p-value =", round(cox_summary$sctest[3], 4), "\n")
+cat("LR test: Chi-square =", round(lr_stat, 4),
+    ", p-value =", round(cox_summary$logtest[3], 4), "\n")
+```
+
+**Answer:**
+
+* **Test statistics:**
+  - Wald test: Chi-square = [VALUE], p-value = [VALUE]
+  - Score test: Chi-square = [VALUE], p-value = [VALUE]
+  - Likelihood Ratio test: Chi-square = [VALUE], p-value = [VALUE]
+
+* **Comparison to Question 1:** [State whether any of these test statistics are the same as the logrank or Wilcoxon tests from Question 1(b). Note: The Score test from Cox model should be identical or very close to the logrank test.]
+
+
+## Part (b): Adjusted Cox Model
+
+**Task:** Fit an adjusted Cox model for obese_ovwt, adjusting for age, gender, sysbp, and mitype. Compare unadjusted and adjusted HRs.
+
+```{r q2b-adjusted-cox}
+# Fit adjusted Cox model
+cox_adj <- coxph(Surv(dthtime, dthstat) ~ obese_ovwt + age + gender + sysbp + mitype,
+                 data = mi_data,
+                 ties = "breslow")
+
+# Model summary
+summary(cox_adj)
+
+# Extract hazard ratios and confidence intervals
+# Unadjusted
+unadj_hr <- exp(coef(cox_unadj))
+unadj_ci <- exp(confint(cox_unadj))
+
+# Adjusted
+adj_hr <- exp(coef(cox_adj)["obese_ovwt"])
+adj_ci <- exp(confint(cox_adj)["obese_ovwt", ])
+
+# Create comparison table
+hr_comparison <- data.frame(
+  Model = c("Unadjusted", "Adjusted"),
+  HR = c(unadj_hr, adj_hr),
+  Lower_CI = c(unadj_ci[1], adj_ci[1]),
+  Upper_CI = c(unadj_ci[2], adj_ci[2])
+)
+print(hr_comparison)
+```
+
+**Answer:**
+
+* **Unadjusted HR:** HR = [VALUE] (95% CI: [LOWER], [UPPER])
+
+* **Adjusted HR:** HR = [VALUE] (95% CI: [LOWER], [UPPER])
+
+* **Interpretation:** [Write 1-2 sentences interpreting the effect of overweight/obesity on mortality. Include:
+  - Direction of effect (protective vs. adverse)
+  - Magnitude of effect (e.g., "those who are overweight/obese have [XX]% lower/higher risk of death compared to normal weight individuals")
+  - Whether adjustment for other covariates makes a meaningful difference
+  - Statistical significance
+
+Example: "After adjusting for age, gender, systolic blood pressure, and MI type, overweight/obese individuals have a [XX]% [lower/higher] risk of death compared to normal weight individuals (HR = [VALUE], 95% CI: [LOWER]-[UPPER]). The adjustment [did/did not] substantially change the magnitude of the effect, suggesting [confounding is/is not] an important issue."]
+
+
+## Part (c): Stratified vs. Controlled Analysis
+
+**Task:** Compare test statistics for obese_ovwt from: (i) Cox model stratified by gender, (ii) Cox model controlling for gender, (iii) Logrank test stratified by gender.
+
+```{r q2c-stratified-analysis}
+# (i) Cox model stratified by gender
+cox_strat <- coxph(Surv(dthtime, dthstat) ~ obese_ovwt + strata(gender),
+                   data = mi_data)
+summary(cox_strat)
+strat_score <- cox_strat$score
+strat_wald <- summary(cox_strat)$waldtest[1]
+strat_lr <- summary(cox_strat)$logtest[1]
+
+# (ii) Cox model controlling for gender
+cox_control <- coxph(Surv(dthtime, dthstat) ~ obese_ovwt + gender,
+                     data = mi_data)
+summary(cox_control)
+control_score <- cox_control$score
+control_wald <- summary(cox_control)$waldtest[1]
+control_lr <- summary(cox_control)$logtest[1]
+
+# (iii) Logrank test stratified by gender
+# Perform logrank test separately for each gender, then combine
+male_logrank <- survdiff(Surv(dthtime, dthstat) ~ obese_ovwt,
+                         data = subset(mi_data, gender == 0))
+female_logrank <- survdiff(Surv(dthtime, dthstat) ~ obese_ovwt,
+                           data = subset(mi_data, gender == 1))
+# Combined stratified logrank
+strat_logrank <- survdiff(Surv(dthtime, dthstat) ~ obese_ovwt + strata(gender),
+                          data = mi_data)
+print(strat_logrank)
+
+# Comparison table
+test_comparison <- data.frame(
+  Analysis = c("Cox Stratified", "Cox Controlled", "Logrank Stratified"),
+  Score = c(strat_score, control_score, strat_logrank$chisq),
+  Wald = c(strat_wald, control_wald, NA),
+  LR = c(strat_lr, control_lr, NA)
+)
+print(test_comparison)
+```
+
+**Answer:**
+
+* **Test statistics used:**
+  - (i) Stratified Cox model: [State which statistic - Score, LR, or Wald] = [VALUE]
+  - (ii) Controlled Cox model: [State which statistic] = [VALUE]
+  - (iii) Stratified logrank: [VALUE]
+
+* **Comparison:** [Discuss how the three test statistics compare. Are they similar or different?]
+
+* **Power gain:** [Discuss whether controlling for gender rather than stratifying by gender provides any power gain. Consider the degrees of freedom used and the magnitude of test statistics.]
+
+
+## Part (d): Advantages/Disadvantages of Stratification
+
+**Task:** Comment on advantages/disadvantages of stratifying by gender vs. controlling for gender. Suggest additional analyses.
+
+**Answer:**
+
+* **Advantages of stratification:**
+  - [e.g., Does not assume proportional hazards for gender]
+  - [e.g., Allows baseline hazard to differ completely by gender]
+  - [Add more points]
+
+* **Disadvantages of stratification:**
+  - [e.g., Cannot estimate the effect of gender on survival]
+  - [e.g., May lose power compared to controlling]
+  - [Add more points]
+
+* **Advantages of controlling:**
+  - [e.g., More efficient use of data]
+  - [e.g., Can estimate the effect of gender]
+  - [Add more points]
+
+* **Disadvantages of controlling:**
+  - [e.g., Assumes proportional hazards for gender]
+  - [Add more points]
+
+* **Additional analyses to check appropriateness:**
+  - [e.g., Test for interaction between gender and obese_ovwt]
+  - [e.g., Check proportional hazards assumption for gender using Schoenfeld residuals]
+  - [e.g., Create KM plots stratified by gender to visually assess whether hazards cross]
+  - [Add R code if desired]
+
+---
+
+# Question 3: Model Interpretation - Myocardial Infarction Study
+
+**Given Model Output:**
+
+The following table shows results from a multivariable Cox proportional hazards model:
+
+| Variable Name | Estimate | s.e. | P-value |
+|--------------|----------|------|---------|
+| Age | 0.0500 | 0.0066 | < 0.0001 |
+| Heart rate | 0.0112 | 0.0029 | 0.0001 |
+| Diastolic BP | -0.0107 | 0.0035 | 0.0024 |
+| Sex (0=male, 1=female) | -0.2732 | 0.1442 | 0.0581 |
+| Congestive heart failure | 0.7816 | 0.1469 | < 0.0001 |
+| BMI | -0.0453 | 0.0163 | 0.0055 |
+
+## Part (a): Write Out Estimated Hazard Function
+
+**Task:** Write out the estimated hazard for death λ(t, Z) in Cox PH model form.
+
+**Answer:**
+
+$$\hat{\lambda}(t, Z) = \lambda_0(t) \times \exp[\beta_1 \times \text{Age} + \beta_2 \times \text{HR} + \beta_3 \times \text{Diastolic BP} + \beta_4 \times \text{Sex} + \beta_5 \times \text{CHF} + \beta_6 \times \text{BMI}]$$
+
+Substituting the coefficient estimates:
+
+$$\hat{\lambda}(t, Z) = \lambda_0(t) \times \exp[0.0500 \times \text{Age} + 0.0112 \times \text{HR} - 0.0107 \times \text{Diastolic BP} - 0.2732 \times \text{Sex} + 0.7816 \times \text{CHF} - 0.0453 \times \text{BMI}]$$
+
+where:
+- Age = patient age in years
+- HR = heart rate
+- Diastolic BP = diastolic blood pressure
+- Sex = 0 for male, 1 for female
+- CHF = 1 if congestive heart failure present, 0 otherwise
+- BMI = body mass index
+
+
+## Part (b): Define Baseline Group
+
+**Task:** Define the baseline group (with hazard λ₀(t)) in terms of all covariates. Does this correspond to actual observations?
+
+**Answer:**
+
+The baseline group is defined as individuals with:
+- Age = 0 years
+- Heart rate = 0
+- Diastolic BP = 0
+- Sex = 0 (male)
+- CHF = 0 (no congestive heart failure)
+- BMI = 0
+
+**Does this correspond to actual observations?** [Discuss whether this baseline group is clinically meaningful or represents actual patients in the dataset. Note: Typically this is NOT a realistic baseline group since age=0, HR=0, BP=0, BMI=0 are impossible/implausible values. The baseline hazard is a mathematical construct rather than representing actual patients.]
+
+
+## Part (c): HR for BMI 30 vs BMI 24
+
+**Task:** Calculate estimated HR and 95% CI for BMI=30 vs BMI=24, holding other covariates constant.
+
+```{r q3c-bmi-hr}
+# Coefficient and SE for BMI
+beta_bmi <- -0.0453
+se_bmi <- 0.0163
+
+# Difference in BMI
+bmi_diff <- 30 - 24
+
+# Log hazard ratio
+log_hr <- beta_bmi * bmi_diff
+
+# Hazard ratio
+hr_bmi <- exp(log_hr)
+
+# 95% CI
+se_log_hr <- se_bmi * abs(bmi_diff)
+ci_lower <- exp(log_hr - 1.96 * se_log_hr)
+ci_upper <- exp(log_hr + 1.96 * se_log_hr)
+
+cat("HR for BMI 30 vs BMI 24:", round(hr_bmi, 4), "\n")
+cat("95% CI: (", round(ci_lower, 4), ",", round(ci_upper, 4), ")\n")
+```
+
+**Answer:**
+
+* **Calculation:**
+  - BMI difference = 30 - 24 = 6
+  - Log(HR) = β_BMI × 6 = (-0.0453) × 6 = [VALUE]
+  - HR = exp([LOG_HR]) = [VALUE]
+
+* **95% Confidence Interval:**
+  - SE(log HR) = SE(β_BMI) × 6 = 0.0163 × 6 = [VALUE]
+  - 95% CI: ([LOWER], [UPPER])
+
+* **Interpretation:** [Interpret the HR and CI. Example: "Individuals with BMI of 30 have [XX]% lower risk of death compared to those with BMI of 24, adjusting for age, heart rate, diastolic BP, sex, and CHF (HR = [VALUE], 95% CI: [LOWER]-[UPPER]). This association is statistically significant as the CI does not include 1."]
+
+
+## Part (d): HR for Age 60 vs Age 50
+
+**Task:** Calculate estimated HR and 95% CI for age 60 vs age 50, holding other variables constant.
+
+```{r q3d-age-hr}
+# Coefficient and SE for Age
+beta_age <- 0.0500
+se_age <- 0.0066
+
+# Difference in age
+age_diff <- 60 - 50
+
+# Log hazard ratio
+log_hr_age <- beta_age * age_diff
+
+# Hazard ratio
+hr_age <- exp(log_hr_age)
+
+# 95% CI
+se_log_hr_age <- se_age * age_diff
+ci_lower_age <- exp(log_hr_age - 1.96 * se_log_hr_age)
+ci_upper_age <- exp(log_hr_age + 1.96 * se_log_hr_age)
+
+cat("HR for Age 60 vs Age 50:", round(hr_age, 4), "\n")
+cat("95% CI: (", round(ci_lower_age, 4), ",", round(ci_upper_age, 4), ")\n")
+```
+
+**Answer:**
+
+* **Calculation:**
+  - Age difference = 60 - 50 = 10
+  - Log(HR) = β_Age × 10 = 0.0500 × 10 = [VALUE]
+  - HR = exp([LOG_HR]) = [VALUE]
+
+* **95% Confidence Interval:**
+  - SE(log HR) = SE(β_Age) × 10 = 0.0066 × 10 = [VALUE]
+  - 95% CI: ([LOWER], [UPPER])
+
+* **Interpretation:** [Interpret the HR and CI]
+
+
+## Part (e): HR for Specific Individuals
+
+**Task:** Calculate HR for a female aged 60 with BMI=24 versus a male aged 50 with BMI=30.
+
+```{r q3e-individual-hr}
+# Individual 1: Female, Age 60, BMI 24
+# Individual 2: Male, Age 50, BMI 30
+
+# Coefficients
+beta_age <- 0.0500
+beta_sex <- -0.2732
+beta_bmi <- -0.0453
+
+# Calculate linear predictor for each individual
+# Assume HR, Diastolic BP, and CHF are the same for both (they cancel out)
+
+# Individual 1 (Female, 60, BMI 24)
+lp1 <- beta_age * 60 + beta_sex * 1 + beta_bmi * 24
+
+# Individual 2 (Male, 50, BMI 30)
+lp2 <- beta_age * 50 + beta_sex * 0 + beta_bmi * 30
+
+# Log HR = difference in linear predictors
+log_hr_ind <- lp1 - lp2
+
+# HR
+hr_ind <- exp(log_hr_ind)
+
+cat("Linear predictor for Individual 1:", round(lp1, 4), "\n")
+cat("Linear predictor for Individual 2:", round(lp2, 4), "\n")
+cat("HR (Individual 1 vs Individual 2):", round(hr_ind, 4), "\n")
+```
+
+**Answer:**
+
+* **Calculation:**
+  - Individual 1 (female, age 60, BMI 24): LP₁ = 0.0500(60) + (-0.2732)(1) + (-0.0453)(24) = [VALUE]
+  - Individual 2 (male, age 50, BMI 30): LP₂ = 0.0500(50) + (-0.2732)(0) + (-0.0453)(30) = [VALUE]
+  - Log(HR) = LP₁ - LP₂ = [VALUE]
+  - HR = exp([LOG_HR]) = [VALUE]
+
+* **Interpretation:** [Interpret the HR - does the female aged 60 with BMI 24 have higher or lower risk compared to the male aged 50 with BMI 30?]
+
+
+## Part (f): Association of Sex with Risk of Death
+
+**Task:** Describe the association of sex (male or female) with risk of death based on the model.
+
+**Answer:**
+
+* **Coefficient:** β_Sex = -0.2732 (SE = 0.1442, p = 0.0581)
+
+* **Hazard Ratio:** HR = exp(-0.2732) = [CALCULATE] ≈ 0.76
+
+* **Interpretation:** [Write a complete interpretation. Consider:
+  - Females have approximately [XX]% lower/higher risk of death compared to males, adjusting for age, heart rate, diastolic BP, CHF, and BMI
+  - HR = [VALUE], 95% CI: ([LOWER], [UPPER])
+  - The p-value is 0.0581, which is marginally non-significant at the 0.05 level
+  - Discuss clinical vs. statistical significance
+
+Example: "Females have approximately 24% lower risk of death compared to males after adjusting for other covariates (HR = 0.76, 95% CI: [LOWER]-[UPPER]). However, this association is marginally non-significant at the 0.05 level (p = 0.0581), suggesting we do not have strong statistical evidence of a sex difference in mortality in this sample, though the point estimate suggests a protective effect for females."]
+
+---
+
+# Session Information
+
+```{r session-info}
+sessionInfo()
+```
