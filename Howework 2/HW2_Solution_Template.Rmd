@@ -28,8 +28,7 @@ library(knitr)
 
 ```{r load-data}
 # Read the MI study dataset
-# Adjust the file path as needed
-mi_data <- read.table("MIstudy.dat", header = TRUE)
+mi_data <- read.csv("MIstudy.csv", header = TRUE)
 
 # Display first few rows
 head(mi_data)
