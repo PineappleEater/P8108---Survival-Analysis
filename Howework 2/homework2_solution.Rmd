@@ -342,6 +342,7 @@ print(test_comparison)
 ```
 
 **Answer:**
+
 * **Test statistics used:**
   - (i) Stratified Cox model: Score = 35.48233
   - (ii) Controlled Cox model: Score = 43.98960
